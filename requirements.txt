@@ -1,0 +1,19 @@
+# Xử lý dữ liệu
+numpy>=1.26
+pandas>=2.2
+pyarrow>=15
+# Bản đồ và đồ thị
+osmnx>=2.0
+networkx>=3.2
+shapely>=2.0
+folium>=0.16
+# Học tăng cường + GNN
+torch>=2.3
+torch-geometric>=2.5
+gymnasium>=0.29
+# Giai đoạn 2 (phân tích khuôn mặt) – cài khi cần
+# mediapipe>=0.10
+# opencv-python>=4.9
+# Kiểm thử
+pytest>=8
+pyyaml>=6

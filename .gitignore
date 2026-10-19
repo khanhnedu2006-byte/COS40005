@@ -1,0 +1,22 @@
+# Dữ liệu – không đưa lên git
+dataset/
+data/raw/
+data/interim/
+data/processed/
+data/cache/
+*.zip
+*.csv
+!src/**/*.csv
+# Dữ liệu khuôn mặt tài xế – tuyệt đối không commit
+data/video/
+*.mp4
+*.avi
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+runs/
+checkpoints/
+# Office lock files
+~$*

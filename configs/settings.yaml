@@ -1,0 +1,21 @@
+# Cấu hình chạy pipeline (không chứa ràng buộc đường – ràng buộc nằm trong src/busroute/config/)
+osm:
+  place: "Đà Nẵng, Việt Nam"   # chỉ dùng khi không có bbox và BOUNDARY_POLYGON (cần Nominatim)
+  # Khung bao toàn bộ Đà Nẵng mới (gồm Quảng Nam cũ), [west, south, east, north] – không cần Nominatim
+  # Muốn chạy thử nhanh: thu nhỏ về nội thành + Hội An, ví dụ [108.05, 15.80, 108.35, 16.15]
+  bbox: [107.20, 14.95, 108.75, 16.25]
+  network_type: "drive"
+  cache_dir: "data/cache"
+poi:
+  max_snap_distance_m: 300
+travel_time:
+  min_gps_samples: 5
+routing:
+  default_time_budget_min: 240
+  start_time: "08:00"
+ppo:
+  total_steps: 200000
+  lr: 0.0003
+  gamma: 0.99
+  clip_eps: 0.2
+  hidden_dim: 64

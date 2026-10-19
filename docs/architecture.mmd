@@ -1,0 +1,58 @@
+---
+title: COS40005 – System Architecture (45-seat tour bus, Da Nang)
+---
+flowchart TD
+  subgraph SRC["① Data sources"]
+    GPS[("Operator GPS logs<br>xe*.csv")]
+    OSM(["OSM Overpass API<br>base map only"])
+    CFG[["Hard-coded config<br>POIS · MAIN_ROADS · ACCESS_SPURS<br>TIME_BANNED_AREAS · LEGAL_LIMIT"]]
+  end
+  subgraph PIPE["② Data pipeline – busroute.gps / busroute.graph"]
+    CLEAN["GPS cleaning<br>dedup · seconds · outliers"]
+    MATCH["Map matching<br>GPS → edges"]
+    CALIB["Speed calibration<br>median per road type × slot"]
+    FETCH["Fetch road graph<br>OSMnx, cached"]
+    SNAP["Snap POIs to nodes<br>check if > 300 m"]
+    TT["Travel time per slot<br>min(GPS, legal limit)"]
+    RESTR["Apply restrictions<br>whitelist + time ban"]
+    CONN{"Connected?<br>A, B, all POIs"}
+    EXP[("Graph dataset<br>nodes/edges.parquet<br>+ PyG edge_index")]
+  end
+  subgraph RL["③ Routing core – busroute.routing"]
+    ENV["TourRouteEnv<br>state · action mask · reward"]
+    GNN["GNN encoder<br>GraphSAGE / GAT"]
+    PPO["PPO policy + value"]
+    BASE["Baselines<br>Dijkstra · greedy"]
+    EVAL["Evaluation<br>POI score · time · violations"]
+  end
+  subgraph OUT["④ Output & review"]
+    ROUTE["Route GeoJSON<br>+ folium map"]
+    REVIEW["Review unverified edges<br>Street View · drivers"]
+  end
+  TRIAL(["Field trial by operator<br>cabin video"])
+  subgraph P2["⑤ Phase 2 – driverface (offline, encrypted, in Vietnam)"]
+    CONSENT["Consent + anonymise<br>Law 91/2025"]
+    FACE["Face landmarks<br>MediaPipe"]
+    FEAT["Features<br>EAR · MAR · head pose"]
+    CLS["Classifier<br>drowsy · distracted"]
+    REP["Driver report"]
+  end
+  GPS --> CLEAN --> MATCH --> CALIB --> TT
+  OSM --> FETCH --> SNAP --> TT --> RESTR --> CONN
+  CFG --> SNAP
+  CFG --> RESTR
+  CFG --> TT
+  FETCH --> MATCH
+  CONN -->|yes| EXP
+  CONN -.->|no: add spur| CFG
+  EXP --> ENV
+  GNN --> PPO
+  ENV <--> PPO
+  EXP --> BASE
+  PPO --> EVAL
+  BASE --> EVAL
+  EVAL --> ROUTE --> REVIEW
+  REVIEW -.->|update lists| CFG
+  ROUTE --> TRIAL
+  TRIAL --> CONSENT --> FACE --> FEAT --> CLS --> REP
+  REP -.->|optional: fatigue-aware budget| ENV
