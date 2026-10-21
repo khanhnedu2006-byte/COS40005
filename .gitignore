@@ -7,10 +7,14 @@ data/cache/
 *.zip
 *.csv
 !src/**/*.csv
+# Báo cáo nhỏ, không chứa dữ liệu cá nhân → được commit để chia sẻ giữa các chặng
+!reports/*.csv
 # Dữ liệu khuôn mặt tài xế – tuyệt đối không commit
 data/video/
 *.mp4
 *.avi
+# Biến môi trường, API key – không commit
+.env
 # Python
 __pycache__/
 *.pyc
