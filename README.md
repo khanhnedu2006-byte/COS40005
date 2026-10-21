@@ -23,6 +23,6 @@ pytest                                                                     # Tes
 ```
 
 ## Conventions
-- Variable / function / file names in **English**; code comments in **Vietnamese**.
+- Variable / function / file names in **English**.
 - All bus restrictions are **hard-coded** in `src/busroute/config/` – OSM is used only as the base map.
 - Never commit raw GPS logs or any driver video (see `.gitignore`).
