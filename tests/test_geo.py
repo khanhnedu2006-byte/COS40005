@@ -22,3 +22,9 @@ def test_time_windows():
     assert in_windows(to_minutes("11:00"), windows)
     assert not in_windows(to_minutes("12:00"), windows)
     assert slot_of(to_minutes("17:00")) == "ban_evening"
+
+
+def test_normalize_keeps_road_type_prefix():
+    # "Đường tỉnh", "Đường cao tốc" là một phần của tên, không được bỏ
+    assert normalize_road_name("Đường tỉnh 609") == "đường tỉnh 609"
+    assert normalize_road_name("Đường cao tốc Đà Nẵng - Quảng Ngãi") == "đường cao tốc đà nẵng - quảng ngãi"

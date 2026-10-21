@@ -38,7 +38,11 @@ def fetch_road_graph(place=None, network_type="drive", cache_dir="data/cache", b
     # Cache từng truy vấn con: lỗi giữa chừng thì lần sau chỉ tải tiếp phần còn thiếu
     ox.settings.use_cache = True
     ox.settings.cache_folder = cache_dir
-    ox.settings.requests_timeout = 300
+    ox.settings.requests_timeout = 180
+    # In tiến độ từng truy vấn con ra màn hình để biết chương trình vẫn đang chạy
+    ox.settings.log_console = True
+    # Không gọi trang /status trước mỗi truy vấn: máy chủ dự phòng hay không trả lời trang này → treo
+    ox.settings.overpass_rate_limit = False
     wait, last_error = FIRST_WAIT_S, None
     for round_no in range(1, MAX_ROUNDS + 1):
         for url in OVERPASS_ENDPOINTS:

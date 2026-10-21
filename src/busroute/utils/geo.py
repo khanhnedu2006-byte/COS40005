@@ -29,5 +29,6 @@ def normalize_road_name(name):
     if not name:
         return ""
     name = unicodedata.normalize("NFC", str(name)).strip().lower()
-    name = re.sub(r"^(đường|duong)\s+", "", name)
+    # Bỏ tiền tố "đường" trừ khi nó là một phần của tên (đường tỉnh 609, đường cao tốc…)
+    name = re.sub(r"^(đường|duong)\s+(?!(tỉnh|huyện|xã|cao tốc|sắt|tinh|huyen)\b)", "", name)
     return re.sub(r"\s+", " ", name)
