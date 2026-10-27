@@ -18,7 +18,7 @@ POIS = [
     {
         "poi_id": 3,
         "name": "Cầu Tình Yêu",
-        "coordinates": [16.066407796635513, 108.22875376487974],
+        "coordinates": [16.06640, 108.22875],
         "category": "bridge",
         "pass_road": ["tran hung dao"],
         "score": 0
@@ -26,7 +26,7 @@ POIS = [
     {
         "poi_id": 4,
         "name": "Bảo Tàng Đà Nẵng",
-        "coordinates": [16.07469847595607, 108.22403114852861],
+        "coordinates": [16.07469, 108.22403],
         "category": "landmark",
         "pass_road": ["tran phu", "ly tu trong"],
         "score": 0
@@ -34,7 +34,7 @@ POIS = [
     {
         "poi_id": 5,
         "name": "Bảo Tàng Hồ Chí Minh",
-        "coordinates": [16.04899292444509, 108.217521269464],
+        "coordinates": [16.04899, 108.21752],
         "category": "landmark",
         "pass_road": ["2 thang 9", "duong trinh"],
         "score": 0
@@ -42,7 +42,7 @@ POIS = [
     {
         "poi_id": 6,
         "name": "Biển Mỹ Khê",
-        "coordinates": [16.057021008664933, 108.24919799846016],
+        "coordinates": [16.05702, 108.24919],
         "category": "beach",
         "pass_road": ["vo nguyen giap"],
         "score": 0
@@ -50,7 +50,7 @@ POIS = [
     {
         "poi_id": 7,
         "name": "Ngũ Hành Sơn",
-        "coordinates": [16.004306118668033, 108.26323602585448],
+        "coordinates": [16.00430, 108.26323],
         "category": "landmark",
         "pass_road": ["le van hien", "huyen tran cong chua"],
         "score": 0
@@ -58,7 +58,7 @@ POIS = [
     {
         "poi_id": 8,
         "name": "Công Viên Kỳ Quan",
-        "coordinates": [16.09897542797172, 108.22519903556505],
+        "coordinates": [16.09897, 108.22519],
         "category": "entertainment",
         "pass_road": ["le van duyet"],
         "score": 0
@@ -66,7 +66,7 @@ POIS = [
     {
         "poi_id": 9,
         "name": "Giáo Xứ Chính Tòa Đà Nẵng",
-        "coordinates": [16.066744265621438, 108.22357376219207],
+        "coordinates": [16.06674, 108.22357],
         "category": "landmark",
         "pass_road": ["tran phu", "yen bai"],
         "score": 0
@@ -74,7 +74,7 @@ POIS = [
     {
         "poi_id": 10,
         "name": "Tượng Đài Mẹ Nhu",
-        "coordinates": [16.065772334351845, 108.18359271472066],
+        "coordinates": [16.06577, 108.18359],
         "category": "landmark",
         "pass_road": ["dien bien phu"],
         "score": 0
@@ -82,7 +82,7 @@ POIS = [
     {
         "poi_id": 11,
         "name": "Làng Gốm Thanh Hà",
-        "coordinates": [15.878740764127343, 108.30054841988499],
+        "coordinates": [15.87874, 108.30055],
         "category": "landmark",
         "pass_road": [],
         "score": 0
@@ -90,7 +90,7 @@ POIS = [
     {
         "poi_id": 12,
         "name": "Biển An Bàng",
-        "coordinates": [15.914132275646478, 108.34244175651062],
+        "coordinates": [15.91413, 108.34244],
         "category": "beach",
         "pass_road": ["hai ba trung"],
         "score": 0
@@ -98,7 +98,7 @@ POIS = [
     {
         "poi_id": 13,
         "name": "Tượng Đài 2 Tháng 9",
-        "coordinates": [16.041290746596545, 108.22426435277904],
+        "coordinates": [16.04129, 108.22426],
         "category": "landmark",
         "pass_road": ["2 thang 9"],
         "score": 0
@@ -106,7 +106,7 @@ POIS = [
     {
         "poi_id": 14,
         "name": "Bảo tàng Mỹ thuật Đà Nẵng",
-        "coordinates": [16.071352458956135, 108.21787338576603],
+        "coordinates": [16.07135, 108.21787],
         "category": "landmark",
         "pass_road": ["le duan"],
         "score": 0
@@ -114,7 +114,7 @@ POIS = [
     {
         "poi_id": 15,
         "name": "Công Viên Biển Đông",
-        "coordinates": [16.070352094835602, 108.24588239741723],
+        "coordinates": [16.07035, 108.24588],
         "category": "entertainment",
         "pass_road": ["vo nguyen giap", "pham van dong"],
         "score": 0
@@ -122,7 +122,7 @@ POIS = [
     {
         "poi_id": 16,
         "name": "Chùa Pháp Lâm",
-        "coordinates": [16.06349634951422, 108.21636937608717],
+        "coordinates": [16.06349, 108.21636],
         "category": "landmark",
         "pass_road": ["ong ich khiem"],
         "score": 0
@@ -130,7 +130,7 @@ POIS = [
     {
         "poi_id": 17,
         "name": "Đường Hoa Tết Đà Nẵng",
-        "coordinates": [16.07608898037707, 108.22490581852361],
+        "coordinates": [16.07608, 108.22490],
         "category": "entertainment",
         "pass_road": ["bach dang"],
         "score": 0
@@ -138,7 +138,7 @@ POIS = [
     {
         "poi_id": 18,
         "name": "Ga Đà Nẵng",
-        "coordinates": [16.074027113167876, 108.2091988042604],
+        "coordinates": [16.07402, 108.20919],
         "category": "landmark",
         "pass_road": ["hai phong"],
         "score": 0
@@ -146,7 +146,7 @@ POIS = [
     {
         "poi_id": 19,
         "name": "Nhà Thờ Giáo Xứ Tam Tòa",
-        "coordinates": [16.073697212430268, 108.2072246986426],
+        "coordinates": [16.07369, 108.20722],
         "category": "landmark",
         "pass_road": ["tran cao van"],
         "score": 0
@@ -154,7 +154,7 @@ POIS = [
     {
         "poi_id": 20,
         "name": "Cầu Thuận Phước",
-        "coordinates": [16.097036338552783, 108.22052845389287],
+        "coordinates": [16.09703, 108.22052],
         "category": "bridge",
         "pass_road": ["chu huy man"],
         "score": 0
@@ -162,7 +162,7 @@ POIS = [
     {
         "poi_id": 21,
         "name": "Thành Cổ Điện Hải",
-        "coordinates": [16.07636765152467, 108.22166238263594],
+        "coordinates": [16.07636, 108.22166],
         "category": "landmark",
         "pass_road": ["tran phu"],
         "score": 0
@@ -170,7 +170,7 @@ POIS = [
     {
         "poi_id": 22,
         "name": "Nhà Trưng bày Hoàng Sa",
-        "coordinates": [16.09365418987283, 108.25189317911996],
+        "coordinates": [16.09365, 108.25189],
         "category": "landmark",
         "pass_road": ["hoang sa"],
         "score": 0
@@ -178,7 +178,7 @@ POIS = [
     {
         "poi_id": 23,
         "name": "Nhà Thờ Giáo Xứ Nội Hà",
-        "coordinates": [16.075842497411465, 108.21256278843131],
+        "coordinates": [16.07584, 108.21256],
         "category": "landmark",
         "pass_road": ["nguyen thai hoc"],
         "score": 0
@@ -186,7 +186,7 @@ POIS = [
     {
         "poi_id": 24,
         "name": "Bảo Tàng Điêu Khắc Chăm Đà Nẵng",
-        "coordinates": [16.060392274188793, 108.22327998993309],
+        "coordinates": [16.06039, 108.22328],
         "category": "landmark",
         "pass_road": ["2 thang 9", "trung nu vuong"],
         "score": 0
@@ -194,7 +194,7 @@ POIS = [
     {
         "poi_id": 25,
         "name": "Làng Bích họa Đà Nẵng",
-        "coordinates": [16.060819281504827, 108.2201010649263],
+        "coordinates": [16.06081, 108.22010],
         "category": "landmark",
         "pass_road": ["chu van an"],
         "score": 0
@@ -202,7 +202,7 @@ POIS = [
     {
         "poi_id": 26,
         "name": "Công Viên 29/3",
-        "coordinates": [16.040828381409877, 108.22235562993387],
+        "coordinates": [16.04082, 108.22235],
         "category": "entertainment",
         "pass_road": ["dien bien phu", "nguyen tri phuong"],
         "score": 0
@@ -210,7 +210,7 @@ POIS = [
     {
         "poi_id": 27,
         "name": "Làng lụa Hội An",
-        "coordinates": [15.887315236289957, 108.3200876104266],
+        "coordinates": [15.88731, 108.32008],
         "category": "landmark",
         "pass_road": ["nguyen tat thanh"],
         "score": 0
@@ -218,7 +218,7 @@ POIS = [
     {
         "poi_id": 28,
         "name": "Chùa Chúc Thánh",
-        "coordinates": [15.888809915497783, 108.32693917443143],
+        "coordinates": [15.88880, 108.32693],
         "category": "landmark",
         "pass_road": [],
         "score": 0
@@ -226,7 +226,7 @@ POIS = [
     {
         "poi_id": 29,
         "name": "Chùa Phước Lâm",
-        "coordinates": [15.892482224902285, 108.32384106453709],
+        "coordinates": [15.89248, 108.32384],
         "category": "landmark",
         "pass_road": ["le hong phong"],
         "score": 0
@@ -234,7 +234,7 @@ POIS = [
     {
         "poi_id": 30,
         "name": "Công viên Đầm Sen",
-        "coordinates": [16.000977237710387, 108.25389532755771],
+        "coordinates": [16.00097, 108.25389],
         "category": "entertainment",
         "pass_road": [],
         "score": 0
@@ -242,7 +242,7 @@ POIS = [
     {
         "poi_id": 31,
         "name": "Chùa Quán Thế Âm",
-        "coordinates": [15.998927987003293, 108.25509636229391],
+        "coordinates": [15.99892, 108.25509],
         "category": "landmark",
         "pass_road": ["su van hanh"],
         "score": 0
@@ -250,7 +250,7 @@ POIS = [
     {
         "poi_id": 32,
         "name": "Bảo Tàng Văn Hóa Phật Giáo",
-        "coordinates": [15.998875952624308, 108.25514147148786],
+        "coordinates": [15.99887, 108.25514],
         "category": "landmark",
         "pass_road": ["su van hanh"],
         "score": 0
@@ -258,7 +258,7 @@ POIS = [
     {
         "poi_id": 33,
         "name": "Cung Thể Thao Tiên Sơn",
-        "coordinates": [16.036903848534827, 108.22665765952634],
+        "coordinates": [16.03690, 108.22665],
         "category": "entertainment",
         "pass_road": ["phan dang luu", "doan khue"],
         "score": 0
@@ -266,7 +266,7 @@ POIS = [
     {
         "poi_id": 34,
         "name": "Trung tâm Hội chợ Triển lãm Đà Nẵng",
-        "coordinates": [16.023733152964283, 108.2174084463611],
+        "coordinates": [16.02373, 108.21740],
         "category": "entertainment",
         "pass_road": ["cach mang thang 8"],
         "score": 0
@@ -274,7 +274,7 @@ POIS = [
     {
         "poi_id": 35,
         "name": "Bải Cỏ Cháy An Bàng",
-        "coordinates": [15.909898350695052, 108.33739067982499],
+        "coordinates": [15.90989, 108.33739],
         "category": "beach",
         "pass_road": ["hai ba trung"],
         "score": 0
@@ -282,7 +282,7 @@ POIS = [
     {
         "poi_id": 36,
         "name": "Biển Cửa Đại",
-        "coordinates": [15.901948613524961, 108.35970129632042],
+        "coordinates": [15.90194, 108.35970],
         "category": "beach",
         "pass_road": ["lac long quan"],
         "score": 0
@@ -290,7 +290,7 @@ POIS = [
     {
         "poi_id": 37,
         "name": "Bảo tàng Y khoa Apollo",
-        "coordinates": [15.962654590485496, 108.25861660138807],
+        "coordinates": [15.96265, 108.25861],
         "category": "landmark",
         "pass_road": [],
         "score": 0
@@ -298,7 +298,7 @@ POIS = [
     {
         "poi_id": 38,
         "name": "Công Viên Châu Á Sun World",
-        "coordinates": [16.040259595293413, 108.22871114001656],
+        "coordinates": [16.04025, 108.22871],
         "category": "entertainment",
         "pass_road": ["2 thang 9", "phan dang luu"],
         "score": 0
@@ -306,7 +306,7 @@ POIS = [
     {
         "poi_id": 39,
         "name": "Cung Thiếu Nhi Đà Nẵng",
-        "coordinates": [16.038448857545152, 108.22561840000446],
+        "coordinates": [16.03844, 108.22561],
         "category": "entertainment",
         "pass_road": ["2 thang 9"],
         "score": 0
@@ -314,7 +314,7 @@ POIS = [
     {
         "poi_id": 40,
         "name": "Chùa Nam Sơn",
-        "coordinates": [16.00055082099523, 108.20519805388315],
+        "coordinates": [16.00055, 108.20520],
         "category": "landmark",
         "pass_road": ["nguyen kha trac"],
         "score": 0
