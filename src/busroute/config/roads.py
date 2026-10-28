@@ -3,12 +3,36 @@
 # Đường chính được phép đi – so khớp tên sau khi normalize_road_name()
 # TODO: xác nhận từng tuyến với tài xế trước khi dùng
 MAIN_ROADS = [
-    "Võ Nguyên Giáp", "Trường Sa", "Hoàng Sa",          # trục biển
-    "Nguyễn Văn Linh", "Bạch Đằng", "Trần Hưng Đạo",     # trung tâm, hai bờ sông Hàn
-    "Nguyễn Tất Thành", "Điện Biên Phủ", "Ngô Quyền",
+    # --- Trục biển / Sơn Trà / Mỹ Khê ---
+    "Võ Nguyên Giáp", "Trường Sa", "Hoàng Sa",
+    "Phạm Văn Đồng", "Hồ Nghinh", "Nguyễn Văn Thoại",
+    "Ngô Quyền", "Võ Văn Kiệt", "Như Nguyệt",
+    "Dương Đình Nghệ", "Lê Văn Duyệt", "Nguyễn Công Trứ",   
+
+    # --- Trung tâm, hai bờ sông Hàn ---
+    "Nguyễn Văn Linh", "Bạch Đằng", "Trần Hưng Đạo",
+    "Nguyễn Tất Thành", "Điện Biên Phủ",
     "Lê Duẩn", "2 Tháng 9", "3 Tháng 2",
-    "Lê Văn Hiến", "Võ Chí Công",                        # hướng Ngũ Hành Sơn, Hội An
-    "Quốc lộ 1A", "Quốc lộ 14B", "ĐT602",                # hướng Bà Nà và phía tây
+    "Hùng Vương", "Lê Lợi", "Quang Trung", "Trần Phú",
+    "Phan Châu Trinh", "Nguyễn Chí Thanh", "Hoàng Diệu",
+    "Duy Tân", "Yên Bái", "Hải Phòng", "Nguyễn Văn Trỗi",
+    "Trần Thị Lý", "Trường Chinh", "Cách Mạng Tháng 8",
+    "Nguyễn Hữu Thọ", "Hoàng Văn Thái",
+    "Nguyễn Tri Phương", "Ông Ích Khiêm", "Trưng Nữ Vương",  
+    "Hàm Nghi", "Lê Đình Lý", "Nguyễn Hữu Cảnh", "Nguyễn Văn Cừ",  
+
+    # --- Hướng Hải Vân / Liên Chiểu ---
+    "Nguyễn Lương Bằng", "Tôn Đức Thắng",
+    "Nguyễn Sinh Sắc", "Phạm Hùng",                          
+
+    # --- Ngũ Hành Sơn, Non Nước ---
+    "Lê Văn Hiến", "Võ Chí Công",
+    "Huyền Trân Công Chúa", "Non Nước",
+    "Núi Thành", "Mai Đăng Chơn", "Lê Thanh Nghị",           
+
+    # --- Quốc lộ, tỉnh lộ (Bà Nà, phía tây) ---
+    "Quốc lộ 1", "Quốc lộ 14B", "Đường Tỉnh 602",
+    "Đường Cao tốc Đà Nẵng - Quảng Ngãi",
 ]
 
 # Đoạn ngắn ngoài mạng chính nhưng bắt buộc để tiếp cận POI (theo OSM way ID)
