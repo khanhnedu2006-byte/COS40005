@@ -12,7 +12,7 @@ ROAD_LIMIT_CLASS = {
     "Võ Nguyên Giáp": "urban_divided",
     "Nguyễn Văn Linh": "urban_divided",
     "Quốc lộ 1A": "rural_divided",
-    # TODO: bổ sung sau khi kiểm tra thực địa
+    
 }
 
 # Hệ số = tốc độ thực / giới hạn luật. GIẢ ĐỊNH tạm thời cho tới khi có đủ GPS

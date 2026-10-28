@@ -15,7 +15,7 @@ MAIN_ROADS = [
     "Lê Duẩn", "2 Tháng 9", "3 Tháng 2",
     "Hùng Vương", "Lê Lợi", "Quang Trung", "Trần Phú",
     "Phan Châu Trinh", "Nguyễn Chí Thanh", "Hoàng Diệu",
-    "Duy Tân", "Yên Bái", "Hải Phòng", "Nguyễn Văn Trỗi",
+    "Duy Tân", "Yên Bái", "Hải Phòng",
     "Trần Thị Lý", "Trường Chinh", "Cách Mạng Tháng 8",
     "Nguyễn Hữu Thọ", "Hoàng Văn Thái",
     "Nguyễn Tri Phương", "Ông Ích Khiêm", "Trưng Nữ Vương",  
