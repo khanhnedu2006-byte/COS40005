@@ -137,16 +137,33 @@ def densify(coords, step=DENSIFY_STEP_M):
 
 RING_END_SKIP_M = 300      # bỏ qua 300 m đầu/cuối: POI nằm sát đường bao thì đoạn tiếp cận có thể lọt vào trong
 RING_TOLERANCE_M = 200     # tổng chiều dài nằm trong vành đai > 200 m mới coi là "đi vào vành đai"
+RING_EDGE_BAND_M = 25      # dải 25 m sát mép đa giác = đường bao (được phép đi); bù sai số khi vẽ đa giác
 
 
-def ring_inside_m(coords, polygon, skip=RING_END_SKIP_M):
-    # Tổng số mét của tuyến nằm trong đa giác, không tính đoạn đầu/cuối
+def dist_to_polygon_edge_m(p, polygon):
+    # Khoảng cách (m) từ điểm p tới cạnh gần nhất của đa giác, chiếu phẳng quanh p
+    kx = 111320 * math.cos(math.radians(p[0]))
+    ky = 110540
+    best = float("inf")
+    for a, b in zip(polygon, polygon[1:] + polygon[:1]):
+        ax, ay = (a[1] - p[1]) * kx, (a[0] - p[0]) * ky
+        bx, by = (b[1] - p[1]) * kx, (b[0] - p[0]) * ky
+        dx, dy = bx - ax, by - ay
+        L = dx * dx + dy * dy
+        t = 0.0 if L == 0 else max(0.0, min(1.0, -(ax * dx + ay * dy) / L))
+        best = min(best, math.hypot(ax + t * dx, ay + t * dy))
+    return best
+
+
+def ring_inside_m(coords, polygon, skip=RING_END_SKIP_M, band=RING_EDGE_BAND_M):
+    # Tổng số mét của tuyến nằm SÂU trong đa giác (cách mép > band), không tính đoạn đầu/cuối
     cum = [0.0]
     for a, b in zip(coords, coords[1:]):
         cum.append(cum[-1] + dist_m(a, b))
     total, inside = cum[-1], 0.0
     for i in range(1, len(coords)):
-        if skip <= cum[i] <= total - skip and point_in_polygon(*coords[i], polygon):
+        if (skip <= cum[i] <= total - skip and point_in_polygon(*coords[i], polygon)
+                and dist_to_polygon_edge_m(coords[i], polygon) > band):
             inside += cum[i] - cum[i - 1]
     return inside
 
