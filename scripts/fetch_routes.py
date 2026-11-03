@@ -49,8 +49,10 @@ PROVIDERS = {
 # Giờ đại diện cho mỗi khung giờ (giờ Việt Nam), dùng làm departAt cho TomTom
 SLOT_DEPART = {"morning": "08:00", "ban_noon": "11:15", "afternoon": "14:30",
                "ban_evening": "17:45", "night": "20:30"}
-# Kích thước xe 45 chỗ (ước lượng) – TomTom dùng để tránh đường không phù hợp
-BUS_DIMENSIONS = {"vehicleLength": 12.0, "vehicleWidth": 2.5, "vehicleHeight": 3.6, "vehicleWeight": 16000}
+# Kích thước xe 45 chỗ (ước lượng) – TomTom dùng để tránh đường quá hẹp / quá thấp.
+# KHÔNG khai vehicleWeight: TomTom sẽ áp giờ cấm xe tải nặng ở Đà Nẵng (bắt đi vòng 31 km
+# thay vì 12 km lúc 11:15), không phải luật cho xe khách. Luật cấm xe khách = đa giác vành đai.
+BUS_DIMENSIONS = {"vehicleLength": 12.0, "vehicleWidth": 2.5, "vehicleHeight": 3.6}
 PASS_RADIUS_M = 100           # POI cách tuyến ≤ 100 m thì tính là "chạy ngang qua"
 DENSIFY_STEP_M = 20           # chèn điểm mỗi 20 m để kiểm tra vành đai không bị lọt
 
@@ -233,8 +235,10 @@ def test(args):
     a, b = pts["P001"], pts["P007"]
     ring = TIME_BANNED_AREAS[0]["polygon"]
     print(f"{a['name']} → {b['name']} ({args.provider})")
+    saved = []   # lưu toạ độ tuyến để vẽ kiểm tra (data/cache, không đưa lên git)
     for slot in (TIME_SLOTS if cfg["per_slot"] else [None]):
         routes = CALLERS[args.provider](key, a, b, slot)
+        saved += [{"slot": slot, "idx": i, **r} for i, r in enumerate(routes or [])]
         if not routes:
             print(f"  {slot}: không có kết quả")
             continue
@@ -244,6 +248,10 @@ def test(args):
                   f"{r['distance_m'] / 1000:5.1f} km, trong vành đai {inside / 1000:4.1f} km "
                   f"→ vào vành đai: {inside > RING_TOLERANCE_M}")
         time.sleep(1 / cfg["rps"])
+    out = RAW_DIR / f"{args.provider}_test_routes.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+    print(f"Đã lưu toạ độ các tuyến vào {out}")
 
 
 def diag(args):
@@ -277,10 +285,9 @@ def compare(args):
     a, b = pts[args.src], pts[args.dst]
     ring = TIME_BANNED_AREAS[0]["polygon"]
     variants = {
-        "bus + kích thước 45 chỗ (hiện tại)": ("bus", BUS_DIMENSIONS),
+        "bus + dài/rộng/cao (hiện tại)": ("bus", BUS_DIMENSIONS),
         "bus, không khai kích thước": ("bus", {}),
-        "bus, chỉ dài/rộng/cao (không khai tải trọng)":
-            ("bus", {k: v for k, v in BUS_DIMENSIONS.items() if k != "vehicleWeight"}),
+        "bus + tải trọng 16 tấn": ("bus", {**BUS_DIMENSIONS, "vehicleWeight": 16000}),
         "car": ("car", {}),
     }
     print(f"{a['name']} → {b['name']}, khung giờ {args.slot} ({depart_time(args.slot)})")
