@@ -349,11 +349,9 @@ PENDING_IDS = set()                   # 03/11: nhóm chốt giữ Asia Park (P03
 
 def unstable_ids(points):
     audit = ROOT / "reports" / "poi_audit.csv"
-    ids = set(PENDING_IDS)                # hub đã chốt 03/11
-    if audit.exists():
-        with open(audit, encoding="utf-8-sig") as f:
-            ids |= {r["id"] for r in csv.DictReader(f) if set(r["flags"].split(";")) & COORD_FLAGS}
-    return ids
+    # 03/11: nhóm đã chốt toàn bộ 55 điểm → chỉ còn PENDING_IDS (nếu sau này có điểm mới chưa duyệt).
+    # Muốn ưu tiên lại theo cảnh báo toạ độ thì đọc `audit` với COORD_FLAGS như bản trước.
+    return set(PENDING_IDS)
 
 
 def raw_file(provider):
