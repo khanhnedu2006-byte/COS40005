@@ -28,8 +28,11 @@ Mỗi dòng = đi từ điểm `from_id` tới `to_id` trong một khung giờ. 
 2. **Không** khai tải trọng: TomTom sẽ áp giờ cấm xe tải nặng (thử nghiệm: bắt đi vòng 31 km thay vì 12 km).
 3. Giờ cấm (`ban_noon`, `ban_evening`): gửi `avoidAreas` = 10 hình chữ nhật phủ 82 % vành đai, sau đó kiểm tra lại
    từng tuyến bằng đa giác; tuyến đi sâu > 200 m vào vành đai (bỏ 300 m đầu/cuối và dải 25 m sát mép = đường bao) bị loại.
+   **Trục được phép:** Duy Tân – Nguyễn Văn Trỗi – Trần Thị Lý (Công văn 1710/UBND-SGTVT, 04/2022; GPS 14/10/2026 xác nhận xe 45 chỗ vẫn đi Duy Tân lúc 17:22, 18:19) → không tính là vào vành đai, vùng tránh chừa trục này.
 4. Chọn tuyến nhanh nhất còn lại → `duration_s`, `distance_m`, `pois_passed`. Không còn tuyến → `feasible = 0`.
 5. Kiểm chứng: so TomTom với 20 chặng GPS thật cùng thứ + giờ (`validate`) → `reports/gps_validation.csv`.
+   Lần 1 (03/11): MAPE 33,5 % tổng; trên 10 chặng cùng tuyến MAPE 24 %, GPS ÷ TomTom = 0,82 (TomTom chậm hơn ~18 %).
+   `build --scale 0.82` nhân hệ số này (chờ nhóm duyệt).
 
 Hạn mức TomTom miễn phí ~2.500 request/ngày → 14.850 request ≈ **6 ngày chạy** (script tự chạy tiếp từ chỗ dừng).
 

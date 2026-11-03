@@ -138,6 +138,47 @@ def densify(coords, step=DENSIFY_STEP_M):
 RING_END_SKIP_M = 300      # bỏ qua 300 m đầu/cuối: POI nằm sát đường bao thì đoạn tiếp cận có thể lọt vào trong
 RING_TOLERANCE_M = 200     # tổng chiều dài nằm trong vành đai > 200 m mới coi là "đi vào vành đai"
 RING_EDGE_BAND_M = 25      # dải 25 m sát mép đa giác = đường bao (được phép đi); bù sai số khi vẽ đa giác
+# Trục xe trên 30 chỗ được đi trong vành đai: Công văn 1710/UBND-SGTVT (04/2022, thí điểm kích cầu du lịch).
+# GPS 14/10/2026: xe 45 chỗ thật đi Duy Tân lúc 17:22 và 18:19 → trục vẫn đang dùng.
+ALLOWED_CORRIDORS = ["duy tân", "nguyễn văn trỗi", "trần thị lý"]
+CORRIDOR_BAND_M = 30       # điểm cách trục ≤ 30 m coi như đang đi trên trục
+AVOID_INSET_M = 40         # vùng tránh gửi TomTom lùi vào trong mép vành đai / cách trục ít nhất 40 m
+_CORRIDOR_SEGS = None
+
+
+def corridor_segments():
+    # Các đoạn đường của trục được phép, lấy từ đồ thị chặng 1, chỉ giữ phần gần vành đai
+    global _CORRIDOR_SEGS
+    if _CORRIDOR_SEGS is None:
+        import pandas as pd
+        nodes = pd.read_parquet(ROOT / "data" / "stage1" / "nodes_base.parquet").set_index("node_idx")
+        edges = pd.read_parquet(ROOT / "data" / "stage1" / "edges_base.parquet")
+        poly = TIME_BANNED_AREAS[0]["polygon"]
+        lats = [q[0] for q in poly]
+        lons = [q[1] for q in poly]
+        mask = edges.road_name.apply(lambda n: any(c in n for c in ALLOWED_CORRIDORS))
+        segs = []
+        for f, t in zip(edges[mask].from_idx, edges[mask].to_idx):
+            a = (nodes.lat[f], nodes.lon[f])
+            b = (nodes.lat[t], nodes.lon[t])
+            if (min(lats) - 0.01 <= a[0] <= max(lats) + 0.01) and (min(lons) - 0.01 <= a[1] <= max(lons) + 0.01):
+                segs.append((a, b))
+        _CORRIDOR_SEGS = segs
+    return _CORRIDOR_SEGS
+
+
+def dist_to_segments_m(p, segs):
+    kx = 111320 * math.cos(math.radians(p[0]))
+    ky = 110540
+    best = float("inf")
+    for a, b in segs:
+        ax, ay = (a[1] - p[1]) * kx, (a[0] - p[0]) * ky
+        bx, by = (b[1] - p[1]) * kx, (b[0] - p[0]) * ky
+        dx, dy = bx - ax, by - ay
+        L = dx * dx + dy * dy
+        t = 0.0 if L == 0 else max(0.0, min(1.0, -(ax * dx + ay * dy) / L))
+        best = min(best, math.hypot(ax + t * dx, ay + t * dy))
+    return best
 
 
 def dist_to_polygon_edge_m(p, polygon):
@@ -163,7 +204,8 @@ def ring_inside_m(coords, polygon, skip=RING_END_SKIP_M, band=RING_EDGE_BAND_M):
     total, inside = cum[-1], 0.0
     for i in range(1, len(coords)):
         if (skip <= cum[i] <= total - skip and point_in_polygon(*coords[i], polygon)
-                and dist_to_polygon_edge_m(coords[i], polygon) > band):
+                and dist_to_polygon_edge_m(coords[i], polygon) > band
+                and dist_to_segments_m(coords[i], corridor_segments()) > CORRIDOR_BAND_M):
             inside += cum[i] - cum[i - 1]
     return inside
 
@@ -175,9 +217,14 @@ def ring_rectangles(polygon, n_rect=10, grid=120, min_cells=4):
     lons = [p[1] for p in polygon]
     s_, n_, w_, e_ = min(lats), max(lats), min(lons), max(lons)
     dlat, dlon = (n_ - s_) / grid, (e_ - w_) / grid
-    # Ô được tính "bên trong" khi cả 4 góc đều nằm trong đa giác
-    corner = [[point_in_polygon(s_ + i * dlat, w_ + j * dlon, polygon) for j in range(grid + 1)]
-              for i in range(grid + 1)]
+    # Góc ô được tính "bên trong" khi nằm trong đa giác, cách mép và cách trục được phép > AVOID_INSET_M
+    segs = corridor_segments()
+
+    def deep_inside(la, lo):
+        return (point_in_polygon(la, lo, polygon)
+                and dist_to_polygon_edge_m((la, lo), polygon) > AVOID_INSET_M
+                and dist_to_segments_m((la, lo), segs) > AVOID_INSET_M)
+    corner = [[deep_inside(s_ + i * dlat, w_ + j * dlon) for j in range(grid + 1)] for i in range(grid + 1)]
     free = [[corner[i][j] and corner[i + 1][j] and corner[i][j + 1] and corner[i + 1][j + 1]
              for j in range(grid)] for i in range(grid)]
     rects = []
@@ -490,6 +537,7 @@ def build(args):
             raw.setdefault((r["from_id"], r["to_id"]), {})[r.get("slot")] = r["routes"]
     # TomTom đã có kẹt xe theo giờ → không nhân thêm k(slot), chỉ dùng k để kiểm tra
     use_k = not PROVIDERS[args.provider]["per_slot"]
+    scale = getattr(args, "scale", 1.0)   # TomTom: nhân hệ số GPS/TomTom (validate 03/11: 0.82 trên tuyến trùng)
     for (fid, tid), by_slot in raw.items():
         a, b = points[fid], points[tid]
         cache = {}
@@ -512,7 +560,7 @@ def build(args):
                 "from_id": a["id"], "to_id": b["id"], "from_type": a["type"], "to_type": b["type"],
                 "from_lat": a["lat"], "from_lon": a["lon"], "to_lat": b["lat"], "to_lon": b["lon"],
                 "to_poi_score": b["score"], "slot": slot,
-                "duration_s": round(best["duration_s"] * (k.get(slot, 1.0) if use_k else 1.0)) if best else 0,
+                "duration_s": round(best["duration_s"] * (k.get(slot, 1.0) if use_k else scale)) if best else 0,
                 "distance_m": best["distance_m"] if best else 0,
                 "feasible": int(best is not None),
                 "pois_passed": ";".join(pois_passed(best["coords"], plist, {a["id"], b["id"]})) if best else "",
@@ -536,6 +584,9 @@ if __name__ == "__main__":
             sp.add_argument("--src", default="P001")
             sp.add_argument("--dst", default="P007")
         sp.add_argument("--provider", choices=list(PROVIDERS), default="tomtom")
+        if name == "build":
+            sp.add_argument("--scale", type=float, default=1.0,
+                            help="nhân duration TomTom (đề xuất 0.82 từ validate, chờ nhóm duyệt)")
         if name == "fetch":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
