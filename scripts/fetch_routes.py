@@ -341,6 +341,21 @@ def call_goong(key, a, b, slot=None):
 CALLERS = {"tomtom": call_tomtom, "goong": call_goong}
 
 
+# Điểm chưa chốt toạ độ: cờ toạ độ trong reports/poi_audit.csv + điểm nhóm chưa quyết giữ/bỏ + mọi hub (chờ duyệt).
+# fetch lấy trước các cặp mà CẢ HAI điểm đã ổn → quota không phí vào điểm có thể bị đổi.
+COORD_FLAGS = {"on_bridge", "far_from_road", "far_from_major"}
+PENDING_IDS = {"P038", "P049"}        # Asia Park (đóng cửa?), Đỉnh Bàn Cờ (xe lớn lên Sơn Trà?)
+
+
+def unstable_ids(points):
+    audit = ROOT / "reports" / "poi_audit.csv"
+    ids = set(PENDING_IDS) | {p["id"] for p in points if p["type"] == "hub"}
+    if audit.exists():
+        with open(audit, encoding="utf-8-sig") as f:
+            ids |= {r["id"] for r in csv.DictReader(f) if set(r["flags"].split(";")) & COORD_FLAGS}
+    return ids
+
+
 def raw_file(provider):
     return RAW_DIR / f"{provider}_routes.jsonl"
 
@@ -481,6 +496,13 @@ def fetch(args):
         with open(path, encoding="utf-8") as f:
             done = {(r["from_id"], r["to_id"], r.get("slot")) for r in map(json.loads, f)}
     todo = [j for j in todo_all if (j[0]["id"], j[1]["id"], j[2]) not in done]
+    bad = unstable_ids(points)
+    # Ưu tiên cặp mà cả hai điểm đã chốt toạ độ
+    todo.sort(key=lambda j: (j[0]["id"] in bad) + (j[1]["id"] in bad))
+    n_stable = sum(1 for j in todo if j[0]["id"] not in bad and j[1]["id"] not in bad)
+    if args.stable_only:
+        todo = todo[:n_stable]
+    print(f"Điểm chưa chốt ({len(bad)}): {', '.join(sorted(bad))} → còn {n_stable} request cho cặp đã chốt")
     limit = args.limit or cfg["daily"]
     batch = todo[:limit]
     print(f"{len(points)} điểm → {len(todo_all)} request tổng; đã có {len(done)}; còn {len(todo)}; "
@@ -590,5 +612,7 @@ if __name__ == "__main__":
         if name == "fetch":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
+            sp.add_argument("--stable-only", action="store_true",
+                            help="chỉ lấy cặp mà cả hai điểm đã chốt toạ độ")
     args = ap.parse_args()
     {"diag": diag, "test": test, "compare": compare, "validate": validate, "fetch": fetch, "build": build}[args.cmd](args)
