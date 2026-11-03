@@ -1,0 +1,242 @@
+{
+  "2": {
+    "rating": 4.5,
+    "review_count": 1486,
+    "matched_name": "Tượng Cá Chép Hóa Rồng"
+  },
+  "3": {
+    "rating": 4.6,
+    "review_count": 795,
+    "matched_name": "Cầu Tình Yêu - Love Pier"
+  },
+  "4": {
+    "rating": 4.2,
+    "review_count": 3643,
+    "matched_name": "Bảo Tàng Đà Nẵng"
+  },
+  "5": {
+    "rating": 4.3,
+    "review_count": 1636,
+    "matched_name": "Bảo tàng Hồ Chí Minh"
+  },
+  "6": {
+    "rating": 4.7,
+    "review_count": 4749,
+    "matched_name": "Bãi biển Mỹ Khê"
+  },
+  "7": {
+    "rating": 4.4,
+    "review_count": 43458,
+    "matched_name": "Ngũ Hành Sơn"
+  },
+  "8": {
+    "rating": 4.4,
+    "review_count": 1459,
+    "matched_name": "Công viên Kỳ Quan"
+  },
+  "9": {
+    "rating": 4.3,
+    "review_count": 2757,
+    "matched_name": "Giáo Xứ Chính Toà Đà Nẵng"
+  },
+  "10": {
+    "rating": 4.6,
+    "review_count": 2133,
+    "matched_name": "Tượng đài Mẹ Nhu"
+  },
+  "11": {
+    "rating": 4.3,
+    "review_count": 10451,
+    "matched_name": "Làng Gốm Thanh Hà"
+  },
+  "12": {
+    "rating": 4.3,
+    "review_count": 20634,
+    "matched_name": "Bãi Biển An Bàng"
+  },
+  "13": {
+    "rating": 4.5,
+    "review_count": 492,
+    "matched_name": "Kết quả"
+  },
+  "14": {
+    "rating": 4.5,
+    "review_count": 1682,
+    "matched_name": "Bảo tàng Mỹ thuật Đà Nẵng"
+  },
+  "15": {
+    "rating": 4.6,
+    "review_count": 2606,
+    "matched_name": "Công viên Biển Đông"
+  },
+  "16": {
+    "rating": 4.6,
+    "review_count": 641,
+    "matched_name": "Chùa Pháp Lâm"
+  },
+  "17": {
+    "rating": 4.6,
+    "review_count": 47,
+    "matched_name": "Đường hoa Tết Đà Nẵng"
+  },
+  "18": {
+    "rating": 4.0,
+    "review_count": 1184,
+    "matched_name": "Kết quả"
+  },
+  "19": {
+    "rating": 4.5,
+    "review_count": 213,
+    "matched_name": "Nhà Thờ Giáo Xứ Tam Tòa"
+  },
+  "20": {
+    "rating": 4.6,
+    "review_count": 785,
+    "matched_name": "Cầu Thuận Phước"
+  },
+  "21": {
+    "rating": 4.3,
+    "review_count": 10,
+    "matched_name": "Kết quả"
+  },
+  "22": {
+    "rating": 4.6,
+    "review_count": 423,
+    "matched_name": "Nhà Trưng bày Hoàng Sa"
+  },
+  "23": {
+    "rating": 4.6,
+    "review_count": 42,
+    "matched_name": "Nhà Thờ Giáo Xứ Nội Hà"
+  },
+  "24": {
+    "rating": 4.2,
+    "review_count": 8298,
+    "matched_name": "Bảo tàng Điêu khắc Chăm Đà Nẵng"
+  },
+  "25": {
+    "rating": 3.9,
+    "review_count": 897,
+    "matched_name": "Làng Bích họa Đà Nẵng"
+  },
+  "26": {
+    "rating": 4.3,
+    "review_count": 43,
+    "matched_name": "Hồ Công viên 29/3"
+  },
+  "27": {
+    "rating": 4.3,
+    "review_count": 3295,
+    "matched_name": "Kết quả"
+  },
+  "28": {
+    "rating": 4.6,
+    "review_count": 438,
+    "matched_name": "Chùa Chúc Thánh"
+  },
+  "29": {
+    "rating": 4.8,
+    "review_count": 151,
+    "matched_name": "Chùa Phước Lâm"
+  },
+  "30": {
+    "rating": 4.7,
+    "review_count": 62,
+    "matched_name": "Công viên Đầm Sen"
+  },
+  "31": {
+    "rating": 4.8,
+    "review_count": 1467,
+    "matched_name": "Chùa Quán Thế Âm"
+  },
+  "32": {
+    "rating": 4.8,
+    "review_count": 24,
+    "matched_name": "Bảo Tàng Văn Hóa Phật Giáo"
+  },
+  "33": {
+    "rating": 4.5,
+    "review_count": 977,
+    "matched_name": "Cung Thể Thao Tiên Sơn"
+  },
+  "34": {
+    "rating": 4.3,
+    "review_count": 1261,
+    "matched_name": "Trung tâm Hội chợ Triển lãm Đà Nẵng"
+  },
+  "35": {
+    "rating": 5.0,
+    "review_count": 3,
+    "matched_name": "Bải Cỏ Cháy An Bàng"
+  },
+  "36": {
+    "rating": 4.3,
+    "review_count": 484,
+    "matched_name": "Bãi biển Cửa Đại"
+  },
+  "37": {
+    "rating": 4.9,
+    "review_count": 97,
+    "matched_name": "Bảo tàng Y khoa Apollo - Apollo Medical Museum"
+  },
+  "38": {
+    "rating": 5.0,
+    "review_count": 1,
+    "matched_name": "TỔNG ĐẠI LÝ VÉ CÔNG VIÊN CHÂU Á SUN WORLD"
+  },
+  "39": {
+    "rating": 4.4,
+    "review_count": 1377,
+    "matched_name": "Cung Thiếu Nhi Đà Nẵng"
+  },
+  "40": {
+    "rating": 4.7,
+    "review_count": 1931,
+    "matched_name": "Chùa Nam Sơn"
+  },
+  "41": {
+    "rating": 4.2,
+    "review_count": 14603,
+    "matched_name": "Vincom Plaza Đà Nẵng"
+  },
+  "42": {
+    "rating": 4.2,
+    "review_count": 15624,
+    "matched_name": "Lotte Mart Đà Nẵng"
+  },
+  "43": {
+    "rating": 3.9,
+    "review_count": 46131,
+    "matched_name": "Chợ Hàn"
+  },
+  "44": {
+    "rating": 4.3,
+    "review_count": 23450,
+    "matched_name": "Kết quả"
+  },
+  "45": {
+    "rating": 3.9,
+    "review_count": 735,
+    "matched_name": "AEON MALL Đà Nẵng Thanh Khê"
+  },
+  "47": {
+    "rating": 4.4,
+    "review_count": 103924,
+    "matched_name": "Ba Na Hills"
+  },
+  "48": {
+    "rating": 4.3,
+    "review_count": 4871,
+    "matched_name": "Công viên Suối khoáng nóng Núi Thần Tài Đà Nẵng"
+  },
+  "49": {
+    "rating": 4.7,
+    "review_count": 729,
+    "matched_name": "đỉnh Bàn Cờ"
+  },
+  "50": {
+    "rating": 4.5,
+    "review_count": 131,
+    "matched_name": "Cảng cá Thọ Quang"
+  }
+}
