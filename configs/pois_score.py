@@ -30,6 +30,9 @@ CITY_SUFFIX = "Đà Nẵng"
 MANUAL_OVERRIDES = {
     1: {"rating": 4.5, "review_count": 9905},    # Cầu Rồng
     46: {"rating": 4.1, "review_count": 10140},  # GO! Đà Nẵng
+    # Tra tay ngày 2026-11-03 – scraper đọc nhầm trang kết quả / nhầm địa điểm
+    21: {"rating": 4.3, "review_count": 72},     # Di tích Thành Điện Hải (Google: tạm thời đóng cửa)
+    38: {"rating": 4.4, "review_count": 11912},  # Asia Park, nay tên "DA NANG DOWNTOWN" (Google: đóng vĩnh viễn)
 }
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
