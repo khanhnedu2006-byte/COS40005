@@ -259,10 +259,10 @@ def ring_avoid_rects():
     return _RING_RECTS
 
 
-def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None):
+def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None, depart=None):
     dims = BUS_DIMENSIONS if dims is None else dims
     params = {"key": key, "travelMode": travel_mode, "traffic": "true", "routeType": "fastest",
-              "departAt": depart_time(slot), "maxAlternatives": "3", **dims}
+              "departAt": depart or depart_time(slot), "maxAlternatives": "3", **dims}
     url = (f"https://api.tomtom.com/routing/1/calculateRoute/"
            f"{a['lat']},{a['lon']}:{b['lat']},{b['lon']}/json?" + urllib.parse.urlencode(params))
     # Trong giờ cấm: bảo TomTom tránh vành đai ngay khi tìm đường (POST + avoidAreas)
@@ -380,6 +380,50 @@ def compare(args):
         time.sleep(0.3)
 
 
+def validate(args):
+    # So thời gian TomTom với chặng GPS thật (data/interim/gps_trips.csv, tạo bởi build_gps_trips.py)
+    import pandas as pd
+    trips_file = ROOT / "data" / "interim" / "gps_trips.csv"
+    if not trips_file.exists():
+        sys.exit("Chưa có gps_trips.csv – chạy python scripts/build_gps_trips.py trước")
+    trips = pd.read_csv(trips_file, encoding="utf-8-sig")
+    key = read_api_key("TOMTOM_API_KEY")
+    ring = TIME_BANNED_AREAS[0]["polygon"]
+    print(f"Kiểm chứng {len(trips)} chặng GPS ({len(trips)} request)")
+    rows = []
+    for t in trips.itertuples():
+        # Cùng thứ và giờ xuất phát, ở tuần sắp tới (TomTom cần thời điểm tương lai)
+        day = dt.date.today() + dt.timedelta(days=2)
+        while day.weekday() != t.weekday:
+            day += dt.timedelta(days=1)
+        depart = f"{day.isoformat()}T{t.depart[-5:]}:00+07:00"
+        a = {"id": "O", "lat": t.o_lat, "lon": t.o_lon}
+        b = {"id": "D", "lat": t.d_lat, "lon": t.d_lon}
+        routes = call_tomtom(key, a, b, t.slot, depart=depart)
+        time.sleep(1 / PROVIDERS["tomtom"]["rps"])
+        if not routes:
+            continue
+        ok = [r for r in routes if not (banned_in(t.slot) and
+                                        crosses_ring(densify([tuple(p) for p in r["points"]]), ring))]
+        best = min(ok or routes, key=lambda r: r["duration_s"])
+        tt_min = best["duration_s"] / 60
+        rows.append({"slot": t.slot, "depart": t.depart, "gps_minutes": t.gps_minutes,
+                     "tomtom_minutes": round(tt_min, 1), "gps_km": t.gps_path_km,
+                     "tomtom_km": round(best["distance_m"] / 1000, 1),
+                     "ratio_gps_over_tomtom": round(t.gps_minutes / tt_min, 2),
+                     "ape": round(abs(tt_min - t.gps_minutes) / t.gps_minutes, 3)})
+    res = pd.DataFrame(rows)
+    res.to_csv(ROOT / "data" / "interim" / "gps_vs_tomtom.csv", index=False, encoding="utf-8-sig")
+    # Bảng tổng hợp (không có toạ độ) → reports/ để commit và đưa vào báo cáo
+    summary = res.groupby("slot").agg(n=("ape", "size"), mape=("ape", "mean"),
+                                      median_ratio=("ratio_gps_over_tomtom", "median")).round(3)
+    summary.loc["ALL"] = [len(res), round(res.ape.mean(), 3), round(res.ratio_gps_over_tomtom.median(), 2)]
+    summary.to_csv(ROOT / "reports" / "gps_validation.csv", encoding="utf-8-sig")
+    print(res[["slot", "depart", "gps_minutes", "tomtom_minutes", "gps_km", "tomtom_km", "ape"]].to_string(index=False))
+    print("\nTổng hợp (mape = sai số % trung bình; median_ratio = GPS ÷ TomTom):")
+    print(summary.to_string())
+
+
 def fetch(args):
     cfg = PROVIDERS[args.provider]
     points = load_points()
@@ -485,7 +529,7 @@ def build(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("diag", "test", "compare", "fetch", "build"):
+    for name in ("diag", "test", "compare", "validate", "fetch", "build"):
         sp = sub.add_parser(name)
         if name == "compare":
             sp.add_argument("--slot", default="ban_noon", choices=list(TIME_SLOTS))
@@ -496,4 +540,4 @@ if __name__ == "__main__":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
-    {"diag": diag, "test": test, "compare": compare, "fetch": fetch, "build": build}[args.cmd](args)
+    {"diag": diag, "test": test, "compare": compare, "validate": validate, "fetch": fetch, "build": build}[args.cmd](args)
