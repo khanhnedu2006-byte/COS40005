@@ -151,6 +151,47 @@ def ring_inside_m(coords, polygon, skip=RING_END_SKIP_M):
     return inside
 
 
+def ring_rectangles(polygon, n_rect=10, grid=120, min_cells=4):
+    # Phủ đa giác bằng tối đa n_rect hình chữ nhật NẰM TRONG đa giác (tham lam: mỗi lần lấy
+    # hình chữ nhật lớn nhất trên phần chưa phủ). Dùng làm avoidAreas cho TomTom.
+    lats = [p[0] for p in polygon]
+    lons = [p[1] for p in polygon]
+    s_, n_, w_, e_ = min(lats), max(lats), min(lons), max(lons)
+    dlat, dlon = (n_ - s_) / grid, (e_ - w_) / grid
+    # Ô được tính "bên trong" khi cả 4 góc đều nằm trong đa giác
+    corner = [[point_in_polygon(s_ + i * dlat, w_ + j * dlon, polygon) for j in range(grid + 1)]
+              for i in range(grid + 1)]
+    free = [[corner[i][j] and corner[i + 1][j] and corner[i][j + 1] and corner[i + 1][j + 1]
+             for j in range(grid)] for i in range(grid)]
+    rects = []
+    for _ in range(n_rect):
+        # Hình chữ nhật lớn nhất toàn ô True (thuật toán histogram theo từng hàng)
+        best, heights = (0, None), [0] * grid
+        for i in range(grid):
+            heights = [h + 1 if free[i][j] else 0 for j, h in enumerate(heights)]
+            stack = []
+            for j in range(grid + 1):
+                h = heights[j] if j < grid else 0
+                start = j
+                while stack and stack[-1][1] >= h:
+                    start, hh = stack.pop()
+                    area = hh * (j - start)
+                    if area > best[0]:
+                        best = (area, (i - hh + 1, i, start, j - 1))
+                    start = start
+                stack.append((start, h))
+        if best[0] < min_cells:
+            break
+        i0, i1, j0, j1 = best[1]
+        for i in range(i0, i1 + 1):
+            for j in range(j0, j1 + 1):
+                free[i][j] = False
+        rects.append({"southWestCorner": {"latitude": round(s_ + i0 * dlat, 6), "longitude": round(w_ + j0 * dlon, 6)},
+                      "northEastCorner": {"latitude": round(s_ + (i1 + 1) * dlat, 6),
+                                          "longitude": round(w_ + (j1 + 1) * dlon, 6)}})
+    return rects
+
+
 def crosses_ring(coords, polygon):
     return ring_inside_m(coords, polygon) > RING_TOLERANCE_M
 
@@ -167,11 +208,15 @@ def pois_passed(coords, points, skip_ids):
 
 
 # ------------------------------------------------------------------ gọi API
-def http_json(url, key, label):
-    # GET có thử lại; mọi thông báo lỗi đều che key
+def http_json(url, key, label, body=None):
+    # GET (hoặc POST JSON nếu có body) có thử lại; mọi thông báo lỗi đều che key
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(url, timeout=30) as r:
+            req = urllib.request.Request(url)
+            if body is not None:
+                req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                             headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             body = e.read()[:200].decode("utf-8", "ignore").replace(key, "***")
@@ -186,13 +231,28 @@ def http_json(url, key, label):
     return None
 
 
-def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None):
+_RING_RECTS = None
+
+
+def ring_avoid_rects():
+    # Tính 1 lần, dùng lại cho mọi request
+    global _RING_RECTS
+    if _RING_RECTS is None:
+        _RING_RECTS = ring_rectangles(TIME_BANNED_AREAS[0]["polygon"])
+    return _RING_RECTS
+
+
+def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None):
     dims = BUS_DIMENSIONS if dims is None else dims
     params = {"key": key, "travelMode": travel_mode, "traffic": "true", "routeType": "fastest",
               "departAt": depart_time(slot), "maxAlternatives": "3", **dims}
     url = (f"https://api.tomtom.com/routing/1/calculateRoute/"
            f"{a['lat']},{a['lon']}:{b['lat']},{b['lon']}/json?" + urllib.parse.urlencode(params))
-    data = http_json(url, key, f"{a['id']}→{b['id']} {slot}")
+    # Trong giờ cấm: bảo TomTom tránh vành đai ngay khi tìm đường (POST + avoidAreas)
+    if avoid_ring is None:
+        avoid_ring = slot is not None and banned_in(slot)
+    body = {"avoidAreas": {"rectangles": ring_avoid_rects()}} if avoid_ring else None
+    data = http_json(url, key, f"{a['id']}→{b['id']} {slot}", body)
     if data is None:
         return None
     return [{"duration_s": r["summary"]["travelTimeInSeconds"],
