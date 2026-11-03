@@ -133,8 +133,24 @@ def densify(coords, step=DENSIFY_STEP_M):
     return out
 
 
+RING_END_SKIP_M = 300      # bỏ qua 300 m đầu/cuối: POI nằm sát đường bao thì đoạn tiếp cận có thể lọt vào trong
+RING_TOLERANCE_M = 200     # tổng chiều dài nằm trong vành đai > 200 m mới coi là "đi vào vành đai"
+
+
+def ring_inside_m(coords, polygon, skip=RING_END_SKIP_M):
+    # Tổng số mét của tuyến nằm trong đa giác, không tính đoạn đầu/cuối
+    cum = [0.0]
+    for a, b in zip(coords, coords[1:]):
+        cum.append(cum[-1] + dist_m(a, b))
+    total, inside = cum[-1], 0.0
+    for i in range(1, len(coords)):
+        if skip <= cum[i] <= total - skip and point_in_polygon(*coords[i], polygon):
+            inside += cum[i] - cum[i - 1]
+    return inside
+
+
 def crosses_ring(coords, polygon):
-    return any(point_in_polygon(lat, lon, polygon) for lat, lon in coords)
+    return ring_inside_m(coords, polygon) > RING_TOLERANCE_M
 
 
 def pois_passed(coords, points, skip_ids):
@@ -168,9 +184,10 @@ def http_json(url, key, label):
     return None
 
 
-def call_tomtom(key, a, b, slot):
-    params = {"key": key, "travelMode": "bus", "traffic": "true", "routeType": "fastest",
-              "departAt": depart_time(slot), "maxAlternatives": "3", **BUS_DIMENSIONS}
+def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None):
+    dims = BUS_DIMENSIONS if dims is None else dims
+    params = {"key": key, "travelMode": travel_mode, "traffic": "true", "routeType": "fastest",
+              "departAt": depart_time(slot), "maxAlternatives": "3", **dims}
     url = (f"https://api.tomtom.com/routing/1/calculateRoute/"
            f"{a['lat']},{a['lon']}:{b['lat']},{b['lon']}/json?" + urllib.parse.urlencode(params))
     data = http_json(url, key, f"{a['id']}→{b['id']} {slot}")
@@ -222,11 +239,61 @@ def test(args):
             print(f"  {slot}: không có kết quả")
             continue
         for i, r in enumerate(routes):
-            ring_flag = crosses_ring(densify([tuple(p) for p in r["points"]]), ring)
+            inside = ring_inside_m(densify([tuple(p) for p in r["points"]]), ring)
             print(f"  {slot or 'mọi giờ':12} tuyến {i}: {r['duration_s'] / 60:5.1f} phút, "
-                  f"{r['distance_m'] / 1000:5.1f} km, kẹt {r.get('traffic_delay_s', 0)} s, "
-                  f"vào vành đai: {ring_flag}")
+                  f"{r['distance_m'] / 1000:5.1f} km, trong vành đai {inside / 1000:4.1f} km "
+                  f"→ vào vành đai: {inside > RING_TOLERANCE_M}")
         time.sleep(1 / cfg["rps"])
+
+
+def diag(args):
+    # Chẩn đoán key TomTom: gọi 1 tuyến ngắn qua API bản cũ và API Orbis, in mã HTTP (không in key)
+    key = read_api_key("TOMTOM_API_KEY")
+    print(f"Độ dài key: {len(key)} ký tự")
+    loc = "16.06140,108.22763:16.00340,108.26300"
+    tests = {
+        "Routing API (bản cũ)": f"https://api.tomtom.com/routing/1/calculateRoute/{loc}/json?key={key}",
+        "Orbis Routing (apiVersion=2)":
+            f"https://api.tomtom.com/maps/orbis/routing/calculateRoute/{loc}/json?apiVersion=2&key={key}",
+        "Search API (kiểm tra key nói chung)":
+            f"https://api.tomtom.com/search/2/geocode/Da%20Nang.json?limit=1&key={key}",
+    }
+    for name, url in tests.items():
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                body = r.read()[:120].decode("utf-8", "ignore")
+                print(f"  {name}: HTTP {r.status} OK")
+        except urllib.error.HTTPError as e:
+            body = e.read()[:160].decode("utf-8", "ignore").replace(key, "***")
+            print(f"  {name}: HTTP {e.code} – {body}")
+        except Exception as e:
+            print(f"  {name}: {type(e).__name__} {str(e).replace(key, '***')[:120]}")
+
+
+def compare(args):
+    # So sánh tuyến nhanh nhất giữa các cấu hình xe để tìm nguyên nhân tuyến đi vòng
+    key = read_api_key("TOMTOM_API_KEY")
+    pts = {p["id"]: p for p in load_points()}
+    a, b = pts[args.src], pts[args.dst]
+    ring = TIME_BANNED_AREAS[0]["polygon"]
+    variants = {
+        "bus + kích thước 45 chỗ (hiện tại)": ("bus", BUS_DIMENSIONS),
+        "bus, không khai kích thước": ("bus", {}),
+        "bus, chỉ dài/rộng/cao (không khai tải trọng)":
+            ("bus", {k: v for k, v in BUS_DIMENSIONS.items() if k != "vehicleWeight"}),
+        "car": ("car", {}),
+    }
+    print(f"{a['name']} → {b['name']}, khung giờ {args.slot} ({depart_time(args.slot)})")
+    for name, (mode, dims) in variants.items():
+        routes = call_tomtom(key, a, b, args.slot, mode, dims)
+        if not routes:
+            print(f"  {name}: không có kết quả")
+            continue
+        r = min(routes, key=lambda x: x["duration_s"])
+        inside = ring_inside_m(densify([tuple(p) for p in r["points"]]), ring)
+        print(f"  {name:45} {r['duration_s'] / 60:5.1f} phút, {r['distance_m'] / 1000:5.1f} km, "
+              f"trong vành đai {inside / 1000:4.1f} km")
+        time.sleep(0.3)
 
 
 def fetch(args):
@@ -334,11 +401,15 @@ def build(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("test", "fetch", "build"):
+    for name in ("diag", "test", "compare", "fetch", "build"):
         sp = sub.add_parser(name)
+        if name == "compare":
+            sp.add_argument("--slot", default="ban_noon", choices=list(TIME_SLOTS))
+            sp.add_argument("--src", default="P001")
+            sp.add_argument("--dst", default="P007")
         sp.add_argument("--provider", choices=list(PROVIDERS), default="tomtom")
         if name == "fetch":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
-    {"test": test, "fetch": fetch, "build": build}[args.cmd](args)
+    {"diag": diag, "test": test, "compare": compare, "fetch": fetch, "build": build}[args.cmd](args)
