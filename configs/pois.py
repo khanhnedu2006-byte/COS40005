@@ -1,8 +1,10 @@
+# Toạ độ P001, P006, P007, P012, P020, P035, P036, P038 chỉnh ngày 2026-11-03 theo reports/poi_audit.csv
+# (đặt trên đường xe 45 chỗ chạy ngang; nhóm đã chốt)
 POIS = [
     {
         'poi_id': 1,
         'name': 'Cầu Rồng',
-        'coordinates': [16.0614, 108.22763],
+        'coordinates': [16.0613, 108.2316],
         'category': 'bridge',
         'score': 4.474
     },
@@ -37,14 +39,14 @@ POIS = [
     {
         'poi_id': 6,
         'name': 'Biển Mỹ Khê',
-        'coordinates': [16.05702, 108.24919],
+        'coordinates': [16.05652, 108.2471],
         'category': 'beach',
         'score': 4.541
     },
     {
         'poi_id': 7,
         'name': 'Ngũ Hành Sơn',
-        'coordinates': [16.0043, 108.26323],
+        'coordinates': [16.00279, 108.26442],
         'category': 'landmark',
         'score': 4.405
     },
@@ -79,7 +81,7 @@ POIS = [
     {
         'poi_id': 12,
         'name': 'Biển An Bàng',
-        'coordinates': [15.91413, 108.34244],
+        'coordinates': [15.91017, 108.34063],
         'category': 'beach',
         'score': 4.336
     },
@@ -135,7 +137,7 @@ POIS = [
     {
         'poi_id': 20,
         'name': 'Cầu Thuận Phước',
-        'coordinates': [16.09703, 108.22052],
+        'coordinates': [16.10072, 108.23157],
         'category': 'bridge',
         'score': 4.454
     },
@@ -240,14 +242,14 @@ POIS = [
     {
         'poi_id': 35,
         'name': 'Bải Cỏ Cháy An Bàng',
-        'coordinates': [15.90989, 108.33739],
+        'coordinates': [15.9112, 108.338],
         'category': 'beach',
         'score': 4.438
     },
     {
         'poi_id': 36,
         'name': 'Biển Cửa Đại',
-        'coordinates': [15.90194, 108.3597],
+        'coordinates': [15.89995, 108.358],
         'category': 'beach',
         'score': 4.429
     },
@@ -261,7 +263,7 @@ POIS = [
     {
         'poi_id': 38,
         'name': 'Công Viên Châu Á Sun World',
-        'coordinates': [16.04025, 108.22871],
+        'coordinates': [16.03852, 108.22895],
         'category': 'entertainment',
         'score': 4.414
     },

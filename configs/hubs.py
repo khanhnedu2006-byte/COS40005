@@ -1,6 +1,6 @@
 """Điểm đón/trả khách (hub) – A và B của mỗi chuyến chọn trong danh sách này.
 
-TRẠNG THÁI: ĐỀ XUẤT, nhóm cần duyệt trước khi chạy fetch_routes.py fetch thật.
+TRẠNG THÁI: ĐÃ CHỐT ngày 2026-11-03.
 Toạ độ lấy từ OpenStreetMap (Nominatim) và đồ thị chặng 1, tra ngày 2026-11-03.
 Tiêu chí chọn: nơi xe 45 chỗ thực sự đón khách đoàn, nằm NGOÀI vành đai cấm
 (để giờ cấm vẫn xuất phát được), trải đều Đà Nẵng – Sơn Trà – Hội An.

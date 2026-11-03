@@ -344,12 +344,12 @@ CALLERS = {"tomtom": call_tomtom, "goong": call_goong}
 # Điểm chưa chốt toạ độ: cờ toạ độ trong reports/poi_audit.csv + điểm nhóm chưa quyết giữ/bỏ + mọi hub (chờ duyệt).
 # fetch lấy trước các cặp mà CẢ HAI điểm đã ổn → quota không phí vào điểm có thể bị đổi.
 COORD_FLAGS = {"on_bridge", "far_from_road", "far_from_major"}
-PENDING_IDS = {"P038", "P049"}        # Asia Park (đóng cửa?), Đỉnh Bàn Cờ (xe lớn lên Sơn Trà?)
+PENDING_IDS = set()                   # 03/11: nhóm chốt giữ Asia Park (P038) và Đỉnh Bàn Cờ (P049)
 
 
 def unstable_ids(points):
     audit = ROOT / "reports" / "poi_audit.csv"
-    ids = set(PENDING_IDS) | {p["id"] for p in points if p["type"] == "hub"}
+    ids = set(PENDING_IDS)                # hub đã chốt 03/11
     if audit.exists():
         with open(audit, encoding="utf-8-sig") as f:
             ids |= {r["id"] for r in csv.DictReader(f) if set(r["flags"].split(";")) & COORD_FLAGS}

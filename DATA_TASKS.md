@@ -43,16 +43,16 @@ Hạn mức TomTom miễn phí ~2.500 request/ngày → 14.850 request ≈ **6 n
 | Bản đồ nền OSM (`data/stage1/`) | Khánh | ✅ 21/10 |
 | Đa giác vành đai cấm (`data/references/central_ring.geojson`) | Tuấn Anh | ✅ 28/10 – đoạn Bạch Đằng vẽ trùng mặt đường, nên lùi vào 20–30 m |
 | 50 POI + điểm Bayes (`configs/pois.py`) | Tuấn Anh, Quân | ✅ 03/11 – đã sửa số liệu POI 21, 38 |
-| Rà toạ độ POI (`reports/poi_audit.csv`) | Khánh | ✅ 03/11 – 29/55 điểm có cảnh báo, chờ duyệt |
-| 5 hub đề xuất (`configs/hubs.py`) | Khánh | ⏳ chờ nhóm duyệt |
+| Rà toạ độ POI (`reports/poi_audit.csv`) | Khánh | ✅ 03/11 – đã đổi toạ độ P001, P006, P007, P012, P020, P035, P036, P038 |
+| 5 hub (`configs/hubs.py`) | Khánh | ✅ chốt 03/11 |
 | Script TomTom `fetch_routes.py` (diag/test/compare/validate/fetch/build) | Khánh | ✅ đã thử 1 cặp, chạy đúng |
 | Chặng GPS thật (`build_gps_trips.py`, 20 chặng) | Khánh | ✅ |
 | Chạy `validate` (20 request) | Khánh | ⏳ |
-| Chạy `fetch` 6 ngày | Khánh | ⏳ sau khi duyệt hub + toạ độ |
+| Chạy `fetch` ~6 ngày (03/11 → 08/11) | Khánh | ⏳ |
 | `build` + kiểm tra + `data_card.md` | Khánh | ⏳ |
 | `env.py` cho đồ thị đầy đủ 55 nút, đọc `od_matrix.csv` | Đức | ⏳ có thể làm song song với ma trận giả |
 
-## 4. Cần nhóm quyết định trước khi chạy `fetch`
+## 4. Quyết định trước khi chạy `fetch` – ĐÃ CHỐT 03/11 (giữ 5 hub, đổi toạ độ 8 POI theo audit, giữ Asia Park + Đỉnh Bàn Cờ)
 
 1. **Duyệt 5 hub** trong `configs/hubs.py` (sân bay T2, cổng cảng Tiên Sa, bến xe trung tâm, Mỹ Khê, bến xe Hội An).
 2. **Duyệt toạ độ POI** theo `reports/poi_audit.csv` – đổi toạ độ sau khi chạy phải lấy lại toàn bộ cặp của POI đó:
