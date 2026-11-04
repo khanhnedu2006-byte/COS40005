@@ -516,18 +516,35 @@ def fetch(args):
         return
     key = read_api_key(cfg["key"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        for i, (a, b, slot) in enumerate(batch, 1):
-            routes = CALLERS[args.provider](key, a, b, slot)
-            if routes is None:
-                continue
-            f.write(json.dumps({"from_id": a["id"], "to_id": b["id"], "slot": slot, "routes": routes},
-                               ensure_ascii=False) + "\n")
-            f.flush()
-            if i % 100 == 0:
-                print(f"  {i}/{len(batch)}")
-            time.sleep(1 / cfg["rps"])
-    print(f"Đã lưu {path}")
+    # Gọi song song nhiều luồng (mỗi request TomTom mất ~1,5 s); bộ hẹn giờ chung giữ tổng ≤ cfg["rps"] request/giây.
+    # Chỉ luồng chính ghi file → không lo ghi chồng dòng.
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    lock, next_slot = threading.Lock(), [time.monotonic()]
+
+    def throttled_call(job):
+        with lock:
+            wait = next_slot[0] - time.monotonic()
+            next_slot[0] = max(next_slot[0], time.monotonic()) + 1 / cfg["rps"]
+        if wait > 0:
+            time.sleep(wait)
+        a, b, slot = job
+        return job, CALLERS[args.provider](key, a, b, slot)
+
+    t0, n_ok = time.monotonic(), 0
+    with open(path, "a", encoding="utf-8") as f, ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = [pool.submit(throttled_call, j) for j in batch]
+        for i, fut in enumerate(as_completed(futures), 1):
+            (a, b, slot), routes = fut.result()
+            if routes is not None:
+                f.write(json.dumps({"from_id": a["id"], "to_id": b["id"], "slot": slot, "routes": routes},
+                                   ensure_ascii=False) + "\n")
+                f.flush()
+                n_ok += 1
+            if i % 50 == 0:
+                rate = i / (time.monotonic() - t0)
+                print(f"  {i}/{len(batch)} ({rate:.1f} request/s, còn ~{(len(batch) - i) / rate / 60:.0f} phút)")
+    print(f"Đã lưu {path} (+{n_ok} bản ghi)")
 
 
 # ------------------------------------------------------------------ dựng ma trận
@@ -615,6 +632,7 @@ if __name__ == "__main__":
         if name == "fetch":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
+            sp.add_argument("--workers", type=int, default=4, help="số request gọi song song")
             sp.add_argument("--stable-only", action="store_true",
                             help="chỉ lấy cặp mà cả hai điểm đã chốt toạ độ")
     args = ap.parse_args()
