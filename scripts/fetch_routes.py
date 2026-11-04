@@ -19,6 +19,7 @@ Lưu ý:
 """
 import argparse
 import csv
+import http.client
 import json
 import math
 import os
@@ -278,7 +279,7 @@ HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; COS40005-busroute/1.0)",
 
 def http_json(url, key, label, body=None):
     # GET (hoặc POST JSON nếu có body) có thử lại; mọi thông báo lỗi đều che key
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             req = urllib.request.Request(url, headers=HTTP_HEADERS)
             if body is not None:
@@ -294,8 +295,9 @@ def http_json(url, key, label, body=None):
                 return None if e.code == 400 else sys.exit("Key sai, chưa bật dịch vụ hoặc hết hạn mức")
             if e.code == 429:
                 time.sleep(10)
-        except (urllib.error.URLError, TimeoutError) as e:
-            print(f"   Lỗi mạng {label}: {str(e).replace(key, '***')[:120]} (lần {attempt + 1})")
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+            # OSError gồm ConnectionResetError (WinError 10054), TimeoutError; HTTPException gồm RemoteDisconnected
+            print(f"   Lỗi mạng {label}: {type(e).__name__} {str(e).replace(key, '***')[:100]} (lần {attempt + 1})")
         time.sleep(2 * (attempt + 1))
     return None
 
