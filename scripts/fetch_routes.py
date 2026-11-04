@@ -272,14 +272,19 @@ def pois_passed(coords, points, skip_ids):
 
 
 # ------------------------------------------------------------------ gọi API
+# Goong đứng sau Cloudflare: User-Agent mặc định "Python-urllib" bị chặn (lỗi 1010) → khai tên client riêng
+HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; COS40005-busroute/1.0)", "Accept": "application/json"}
+
+
 def http_json(url, key, label, body=None):
     # GET (hoặc POST JSON nếu có body) có thử lại; mọi thông báo lỗi đều che key
     for attempt in range(3):
         try:
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(url, headers=HTTP_HEADERS)
             if body is not None:
                 req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
-                                             headers={"Content-Type": "application/json"}, method="POST")
+                                             headers={**HTTP_HEADERS, "Content-Type": "application/json"},
+                                             method="POST")
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
