@@ -568,54 +568,152 @@ def banned_in(slot):
     return False
 
 
+# ------------------------------------------------------------------ hình học vector hoá (numpy) cho build
+class FastGeo:
+    """Bản numpy của densify / ring_inside_m / pois_passed – cùng quy tắc, nhanh hơn ~100 lần."""
+
+    def __init__(self, polygon, corridor_segs, pois):
+        import numpy as np
+        self.np = np
+        self.poly = np.array(polygon)                       # (V, 2) lat, lon
+        self.pa, self.pb = self.poly, np.roll(self.poly, -1, axis=0)
+        self.bbox = (self.poly[:, 0].min(), self.poly[:, 0].max(), self.poly[:, 1].min(), self.poly[:, 1].max())
+        segs = np.array(corridor_segs) if corridor_segs else np.zeros((0, 2, 2))
+        self.ca, self.cb = segs[:, 0], segs[:, 1]
+        self.poi_ids = [q["id"] for q in pois]
+        self.poi_xy = np.array([[q["lat"], q["lon"]] for q in pois])
+
+    def densify(self, pts, step=DENSIFY_STEP_M):
+        np = self.np
+        pts = np.asarray(pts, dtype=float)
+        if len(pts) < 2:
+            return pts
+        d = self.seg_len(pts)
+        n = np.maximum(1, (d // step).astype(int))
+        t = np.concatenate([np.arange(1, k + 1) / k for k in n])
+        idx = np.repeat(np.arange(len(n)), n)
+        out = pts[idx] + (pts[idx + 1] - pts[idx]) * t[:, None]
+        return np.vstack([pts[:1], out])
+
+    def seg_len(self, pts):
+        np = self.np
+        lat0 = np.radians((pts[:-1, 0] + pts[1:, 0]) / 2)
+        x = np.radians(pts[1:, 1] - pts[:-1, 1]) * np.cos(lat0)
+        y = np.radians(pts[1:, 0] - pts[:-1, 0])
+        return 6371000 * np.hypot(x, y)
+
+    def in_polygon(self, pts):
+        # Ray casting cho nhiều điểm cùng lúc (giống busroute.utils.geo.point_in_polygon)
+        np = self.np
+        lat, lon = pts[:, 0:1], pts[:, 1:2]
+        y1, x1 = self.pa[:, 0], self.pa[:, 1]
+        y2, x2 = self.pb[:, 0], self.pb[:, 1]
+        cond = (y1 > lat) != (y2 > lat)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            xc = x1 + (lat - y1) * (x2 - x1) / (y2 - y1)
+        return ((cond & (lon < xc)).sum(axis=1) % 2) == 1
+
+    def dist_to_segs(self, pts, a, b):
+        # Khoảng cách (m) từ mỗi điểm tới đoạn gần nhất, chiếu phẳng quanh từng điểm
+        np = self.np
+        if len(a) == 0:
+            return np.full(len(pts), np.inf)
+        kx = (111320 * np.cos(np.radians(pts[:, 0])))[:, None]
+        ky = 110540
+        ax, ay = (a[:, 1] - pts[:, 1:2]) * kx, (a[:, 0] - pts[:, 0:1]) * ky
+        bx, by = (b[:, 1] - pts[:, 1:2]) * kx, (b[:, 0] - pts[:, 0:1]) * ky
+        dx, dy = bx - ax, by - ay
+        L = dx * dx + dy * dy
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = np.clip(np.where(L > 0, -(ax * dx + ay * dy) / L, 0), 0, 1)
+        return np.hypot(ax + t * dx, ay + t * dy).min(axis=1)
+
+    def ring_inside_m(self, c):
+        np = self.np
+        if len(c) < 2:
+            return 0.0
+        seg = self.seg_len(c)
+        cum = np.concatenate([[0.0], np.cumsum(seg)])
+        total = cum[-1]
+        s0, s1, w0, w1 = self.bbox
+        cand = np.where((cum >= RING_END_SKIP_M) & (cum <= total - RING_END_SKIP_M)
+                        & (c[:, 0] >= s0) & (c[:, 0] <= s1) & (c[:, 1] >= w0) & (c[:, 1] <= w1))[0]
+        cand = cand[cand >= 1]
+        if len(cand) == 0:
+            return 0.0
+        pts = c[cand]
+        keep = self.in_polygon(pts)
+        if keep.any():
+            sub = pts[keep]
+            ok = (self.dist_to_segs(sub, self.pa, self.pb) > RING_EDGE_BAND_M) & \
+                 (self.dist_to_segs(sub, self.ca, self.cb) > CORRIDOR_BAND_M)
+            keep[np.where(keep)[0]] = ok
+        return float(seg[cand[keep] - 1].sum())
+
+    def pois_passed(self, c, skip_ids):
+        np = self.np
+        sub = c[::2]
+        kx = 111320 * np.cos(np.radians(sub[:, 0]))
+        dx = (self.poi_xy[:, None, 1] - sub[None, :, 1]) * kx[None, :]
+        dy = (self.poi_xy[:, None, 0] - sub[None, :, 0]) * 110540
+        near = (np.hypot(dx, dy) <= PASS_RADIUS_M).any(axis=1)
+        return [pid for pid, hit in zip(self.poi_ids, near) if hit and pid not in skip_ids]
+
+
 def build(args):
+    # Đọc file thô TỪNG DÒNG (file TomTom ~430 MB, không nạp hết vào RAM); mỗi dòng = 1 cặp × 1 khung giờ
+    # (Goong: 1 dòng dùng cho cả 5 khung giờ)
     points = {p["id"]: p for p in load_points()}
-    plist = list(points.values())
-    ring = TIME_BANNED_AREAS[0]["polygon"]
-    k = load_calibration() if not PROVIDERS[args.provider]["per_slot"] else {}
-    rows, n_infeasible = [], 0
-    # Gom kết quả thô theo (từ, đến) → {slot hoặc None: danh sách tuyến}
-    raw = {}
-    with open(raw_file(args.provider), encoding="utf-8") as f:
-        for r in map(json.loads, f):
-            raw.setdefault((r["from_id"], r["to_id"]), {})[r.get("slot")] = r["routes"]
-    # TomTom đã có kẹt xe theo giờ → không nhân thêm k(slot), chỉ dùng k để kiểm tra
-    use_k = not PROVIDERS[args.provider]["per_slot"]
+    geo = FastGeo(TIME_BANNED_AREAS[0]["polygon"], corridor_segments(),
+                  [q for q in points.values() if q["type"] == "poi"])
+    per_slot = PROVIDERS[args.provider]["per_slot"]
+    k = load_calibration() if not per_slot else {}
     scale = getattr(args, "scale", 1.0)   # TomTom: nhân hệ số GPS/TomTom (validate 03/11: 0.82 trên tuyến trùng)
-    for (fid, tid), by_slot in raw.items():
-        a, b = points[fid], points[tid]
-        cache = {}
-        for slot in TIME_SLOTS:
-            key_slot = slot if slot in by_slot else None
-            if key_slot not in by_slot:
-                continue
-            if key_slot not in cache:
-                # Giải mã mọi tuyến thay thế một lần, đánh dấu tuyến nào đi vào vành đai
-                routes = []
-                for rt in by_slot[key_slot]:
-                    coords = densify([tuple(p) for p in rt["points"]])
-                    routes.append({**rt, "coords": coords, "in_ring": crosses_ring(coords, ring)})
-                cache[key_slot] = sorted(routes, key=lambda x: x["duration_s"])
-            routes = cache[key_slot]
-            ok = [x for x in routes if not (banned_in(slot) and x["in_ring"])]
-            best = ok[0] if ok else None
-            n_infeasible += best is None
-            rows.append({
-                "from_id": a["id"], "to_id": b["id"], "from_type": a["type"], "to_type": b["type"],
-                "from_lat": a["lat"], "from_lon": a["lon"], "to_lat": b["lat"], "to_lon": b["lon"],
-                "to_poi_score": b["score"], "slot": slot,
-                "duration_s": round(best["duration_s"] * (k.get(slot, 1.0) if use_k else scale)) if best else 0,
-                "distance_m": best["distance_m"] if best else 0,
-                "feasible": int(best is not None),
-                "pois_passed": ";".join(pois_passed(best["coords"], plist, {a["id"], b["id"]})) if best else "",
-                "through_ring": int(best["in_ring"]) if best else 0,
-            })
+    fields = ["from_id", "to_id", "from_type", "to_type", "from_lat", "from_lon", "to_lat", "to_lon",
+              "to_poi_score", "slot", "duration_s", "distance_m", "feasible", "pois_passed", "through_ring"]
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUT_FILE, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+    tmp = OUT_FILE.with_suffix(".tmp")
+    t0, n_rows, n_infeasible, seen = time.monotonic(), 0, 0, set()
+    with open(raw_file(args.provider), encoding="utf-8") as fin, \
+            open(tmp, "w", newline="", encoding="utf-8-sig") as fout:
+        w = csv.DictWriter(fout, fieldnames=fields)
         w.writeheader()
-        w.writerows(rows)
-    print(f"Đã ghi {OUT_FILE}: {len(rows)} dòng, {n_infeasible} dòng không có tuyến hợp lệ")
+        for line_no, line in enumerate(fin, 1):
+            r = json.loads(line)
+            a, b = points.get(r["from_id"]), points.get(r["to_id"])
+            if a is None or b is None:
+                continue                               # điểm đã bị bỏ khỏi danh sách
+            routes = []
+            for rt in r["routes"]:
+                c = geo.densify(rt["points"])
+                routes.append({**rt, "coords": c, "in_ring": geo.ring_inside_m(c) > RING_TOLERANCE_M})
+            routes.sort(key=lambda x: x["duration_s"])
+            for slot in ([r["slot"]] if per_slot else list(TIME_SLOTS)):
+                key = (a["id"], b["id"], slot)
+                if key in seen:
+                    continue                           # bản ghi trùng (chạy lại) → giữ bản đầu
+                seen.add(key)
+                ok = [x for x in routes if not (banned_in(slot) and x["in_ring"])]
+                best = ok[0] if ok else None
+                n_infeasible += best is None
+                mult = k.get(slot, 1.0) if not per_slot else scale
+                w.writerow({
+                    "from_id": a["id"], "to_id": b["id"], "from_type": a["type"], "to_type": b["type"],
+                    "from_lat": a["lat"], "from_lon": a["lon"], "to_lat": b["lat"], "to_lon": b["lon"],
+                    "to_poi_score": b["score"], "slot": slot,
+                    "duration_s": round(best["duration_s"] * mult) if best else 0,
+                    "distance_m": best["distance_m"] if best else 0,
+                    "feasible": int(best is not None),
+                    "pois_passed": ";".join(geo.pois_passed(best["coords"], {a["id"], b["id"]})) if best else "",
+                    "through_ring": int(best["in_ring"]) if best else 0,
+                })
+                n_rows += 1
+            if line_no % 1000 == 0:
+                rate = line_no / (time.monotonic() - t0)
+                print(f"  {line_no} dòng thô ({rate:.0f} dòng/s)")
+    tmp.replace(OUT_FILE)
+    print(f"Đã ghi {OUT_FILE}: {n_rows} dòng, {n_infeasible} dòng không có tuyến hợp lệ "
+          f"({time.monotonic() - t0:.0f}s, scale={scale})")
 
 
 if __name__ == "__main__":
