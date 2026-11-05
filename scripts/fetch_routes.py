@@ -143,6 +143,10 @@ RING_EDGE_BAND_M = 25      # dải 25 m sát mép đa giác = đường bao (đ�
 # GPS 14/10/2026: xe 45 chỗ thật đi Duy Tân lúc 17:22 và 18:19 → trục vẫn đang dùng.
 ALLOWED_CORRIDORS = ["duy tân", "nguyễn văn trỗi", "trần thị lý"]
 CORRIDOR_BAND_M = 30       # điểm cách trục ≤ 30 m coi như đang đi trên trục
+# Điểm (POI/hub) nằm trong vành đai: giờ cấm KHÔNG tới/đi được, trừ khi sát đường bao (≤ 100 m – xe chạy ngang
+# trên đường bao vẫn thấy) hoặc nằm trên trục được phép (≤ 50 m). Toạ độ POI là tâm công trình nên cho 100 m.
+ENDPOINT_EDGE_OK_M = 100
+ENDPOINT_CORRIDOR_OK_M = 50
 AVOID_INSET_M = 40         # vùng tránh gửi TomTom lùi vào trong mép vành đai / cách trục ít nhất 40 m
 _CORRIDOR_SEGS = None
 
@@ -660,6 +664,19 @@ class FastGeo:
         return [pid for pid, hit in zip(self.poi_ids, near) if hit and pid not in skip_ids]
 
 
+def endpoint_banned_ids(points):
+    # Các điểm nằm sâu trong vành đai → giờ cấm không hợp lệ (áp cho cả điểm đi và điểm đến)
+    ring = TIME_BANNED_AREAS[0]["polygon"]
+    segs = corridor_segments()
+    out = set()
+    for q in points:
+        loc = (q["lat"], q["lon"])
+        if (point_in_polygon(*loc, ring) and dist_to_polygon_edge_m(loc, ring) > ENDPOINT_EDGE_OK_M
+                and dist_to_segments_m(loc, segs) > ENDPOINT_CORRIDOR_OK_M):
+            out.add(q["id"])
+    return out
+
+
 def build(args):
     # Đọc file thô TỪNG DÒNG (file TomTom ~430 MB, không nạp hết vào RAM); mỗi dòng = 1 cặp × 1 khung giờ
     # (Goong: 1 dòng dùng cho cả 5 khung giờ)
@@ -667,6 +684,8 @@ def build(args):
     geo = FastGeo(TIME_BANNED_AREAS[0]["polygon"], corridor_segments(),
                   [q for q in points.values() if q["type"] == "poi"])
     per_slot = PROVIDERS[args.provider]["per_slot"]
+    deep = endpoint_banned_ids(list(points.values()))
+    print(f"Điểm nằm sâu trong vành đai (giờ cấm không đi/tới được): {', '.join(sorted(deep))}")
     k = load_calibration() if not per_slot else {}
     scale = getattr(args, "scale", 1.0)   # TomTom: nhân hệ số GPS/TomTom (validate 03/11: 0.82 trên tuyến trùng)
     fields = ["from_id", "to_id", "from_type", "to_type", "from_lat", "from_lon", "to_lat", "to_lon",
@@ -693,7 +712,10 @@ def build(args):
                 if key in seen:
                     continue                           # bản ghi trùng (chạy lại) → giữ bản đầu
                 seen.add(key)
-                ok = [x for x in routes if not (banned_in(slot) and x["in_ring"])]
+                if banned_in(slot) and (a["id"] in deep or b["id"] in deep):
+                    ok = []
+                else:
+                    ok = [x for x in routes if not (banned_in(slot) and x["in_ring"])]
                 best = ok[0] if ok else None
                 n_infeasible += best is None
                 mult = k.get(slot, 1.0) if not per_slot else scale

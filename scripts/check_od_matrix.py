@@ -41,7 +41,10 @@ def run_checks(df):
     for ban, base in (("ban_noon", "morning"), ("ban_evening", "afternoon")):
         if ban in w and base in w:
             r = (w[ban] / w[base]).dropna()
-            check(f"{ban} ≥ 0,8 × {base}", (r >= 0.8).all(), f"{int((r < 0.8).sum())} cặp")
+            # Cảnh báo: TomTom đôi khi chỉ đưa lối tắt khi được yêu cầu tránh vành đai (vd. P026→P039 qua
+            # Kiệt 383 Núi Thành) → giờ cấm ngắn hơn giờ thường. Không phải lỗi dữ liệu; ghi vào data card.
+            check(f"{ban} ≥ 0,8 × {base} (cảnh báo)", (r >= 0.8).mean() > 0.99,
+                  f"{int((r < 0.8).sum())} cặp ({100 * (r < 0.8).mean():.1f} %)")
     # Bất đối xứng A→B so với B→A (cảnh báo)
     m = f.set_index(["from_id", "to_id", "slot"]).duration_s
     rev = m.copy()
