@@ -1,4 +1,4 @@
-# DATA TASKS v2 – Ma trận thời gian giữa 55 điểm (cập nhật 03/11/2026)
+# DATA TASKS v2 – Ma trận thời gian giữa 55 điểm (cập nhật 05/11/2026 – ĐÃ KHOÁ)
 
 > Thay thế kế hoạch 3 chặng cũ (21/10 → 31/10). Bản cũ xem trong lịch sử git.
 > Thiết kế mới do nhóm chốt 01–03/11: **node = POI + hub**, **thời gian lấy từ TomTom API theo khung giờ**,
@@ -47,9 +47,9 @@ Hạn mức TomTom miễn phí ~2.500 request/ngày → 14.850 request ≈ **6 n
 | 5 hub (`configs/hubs.py`) | Khánh | ✅ chốt 03/11 |
 | Script TomTom `fetch_routes.py` (diag/test/compare/validate/fetch/build) | Khánh | ✅ đã thử 1 cặp, chạy đúng |
 | Chặng GPS thật (`build_gps_trips.py`, 20 chặng) | Khánh | ✅ |
-| Chạy `validate` (20 request) | Khánh | ⏳ |
-| Chạy `fetch` ~6 ngày (03/11 → 08/11) | Khánh | ⏳ |
-| `build` + kiểm tra + `data_card.md` | Khánh | ⏳ |
+| Chạy `validate` (20 request) | Khánh | ✅ 03/11 – `reports/gps_validation.csv` |
+| Chạy `fetch` (14.850 request TomTom) | Khánh | ✅ 05/11 |
+| `build` + kiểm tra + `data_card.md` | Khánh | ✅ 05/11 – 12/12 đạt, **KHOÁ DỮ LIỆU** |
 | `env.py` cho đồ thị đầy đủ 55 nút, đọc `od_matrix.csv` | Đức | ⏳ có thể làm song song với ma trận giả |
 
 ## 4. Quyết định trước khi chạy `fetch` – ĐÃ CHỐT 03/11 (giữ 5 hub, đổi toạ độ 8 POI theo audit, giữ Asia Park + Đỉnh Bàn Cờ)
@@ -64,7 +64,15 @@ Hạn mức TomTom miễn phí ~2.500 request/ngày → 14.850 request ≈ **6 n
 3. **Asia Park** (Google ghi đóng vĩnh viễn) và **Đỉnh Bàn Cờ** (cách đường chính 2,3 km, cần kiểm tra quy định xe lớn lên
    Sơn Trà): giữ hay bỏ?
 
-## 5. Đã bỏ so với kế hoạch cũ
+## 5. Kết quả khoá dữ liệu (05/11/2026)
+
+- `data/final/od_matrix.csv`: 14.850 dòng, feasible = 12.557 (84,6 %), `scale = 1.0` (thời gian TomTom gốc).
+- Giờ cấm: 11 điểm nằm sâu trong vành đai (> 100 m từ đường bao, ngoài trục Duy Tân) không đi/tới được:
+  P009, P014, P016, P018, P019, P021, P023, P025, P044, P045, P046.
+- Cảnh báo đã biết: 11 cặp ngắn (0,2–0,4 %) giờ cấm nhanh hơn giờ thường do TomTom chỉ đưa lối tắt khi tránh vành đai.
+- TomTom chậm hơn GPS thật ~18 % trên tuyến trùng → báo cáo nêu rõ; có thể build lại với `--scale 0.82` (không tốn request).
+
+## 6. Đã bỏ so với kế hoạch cũ
 
 - `MAIN_ROADS` (whitelist 57 đường), `speeds.py` (giới hạn tốc độ), map matching GPS theo từng đoạn.
 - Dữ liệu độ rộng đường: thay bằng kích thước xe khai cho TomTom; nếu tìm được số liệu nhà nước thì dùng để kiểm tra.
