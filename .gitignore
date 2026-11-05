@@ -24,3 +24,6 @@ runs/
 checkpoints/
 # Office lock files
 ~$*
+
+# Ma trận cuối + bản giả (không có dữ liệu cá nhân, chỉ toạ độ POI/hub) → chia sẻ qua git cho người làm routing
+!data/final/*.csv
