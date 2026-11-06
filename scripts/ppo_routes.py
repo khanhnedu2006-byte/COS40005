@@ -7,17 +7,20 @@ import json
 from busroute.routing.orienteering import ODMatrix
 from busroute.routing.od_evaluation import evaluate, greedy_route, shortest_route
 from busroute.routing.metaheuristics import ALNS, VNS
-from busroute.routing.ppo_od import (Features, PPOConfig, infer, load_coordinates,
+from busroute.routing.ppo_od import (Features, PPOConfig, PPOSearch, load_coordinates,
                                      load_policy, scenarios, train)
 from busroute.utils.timeslots import to_minutes
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", default="data/final/od_matrix.csv")
     sub = parser.add_subparsers(dest="command", required=True)
     training = sub.add_parser("train")
-    training.add_argument("--checkpoint", required=True)
+    training.add_argument("--matrix", default=argparse.SUPPRESS,
+                          help="OD matrix CSV (default: data/final/od_matrix.csv)")
+    training.add_argument("--checkpoint", default="checkpoints/ppo.zip",
+                          help="Output checkpoint path (default: checkpoints/ppo.zip)")
     training.add_argument("--steps", type=int, default=200000)
     training.add_argument("--seed", type=int, default=0)
     training.add_argument("--lr", type=float, default=0.0003)
@@ -38,7 +41,7 @@ def main():
     evaluation.add_argument("--checkpoint", required=True)
     evaluation.add_argument("--iterations", type=int, default=100)
     evaluation.add_argument("--output", help="Write the complete JSON report to this path")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     matrix = ODMatrix.from_csv(args.matrix)
     if args.command == "train":
         cfg = PPOConfig(total_steps=args.steps, seed=args.seed, lr=args.lr, gamma=args.gamma,
@@ -48,16 +51,20 @@ def main():
     else:
         model = load_policy(args.checkpoint, args.matrix)
         features = Features(matrix, load_coordinates(args.matrix))
+        solver = PPOSearch(model, features)
         if args.command == "infer":
             parts = args.departure.split(":")
             if len(parts) != 2 or any(not p.isdigit() or len(p) != 2 for p in parts) or int(parts[0]) >= 24 or int(parts[1]) >= 60:
                 parser.error("departure must be a valid HH:MM time")
-            route = infer(model, features, args.start, args.end, to_minutes(args.departure), args.budget_min * 60)
-            result = None if route is None else {"route": route.route, "score": route.score,
-                                                 "duration_s": route.duration_s, "collected": sorted(route.collected)}
+            try:
+                route = solver(matrix, args.start, args.end, to_minutes(args.departure), args.budget_min * 60)
+            except ValueError as exc:
+                parser.exit(2, f"error: {exc}\n")
+            result = {"route": route.route, "score": route.score,
+                      "duration_s": route.duration_s, "collected": sorted(route.collected)}
         else:
             cases = scenarios(matrix, model.routing_eval_count, model.routing_config["seed"] + 1_000_000)
-            solvers = {"ppo": lambda m, a, b, t, budget: infer(model, features, a, b, t, budget),
+            solvers = {"ppo": solver,
                        "shortest": shortest_route, "greedy": greedy_route,
                        "alns": ALNS(iterations=args.iterations, seed=model.routing_config["seed"]),
                        "vns": VNS(iterations=args.iterations, seed=model.routing_config["seed"])}

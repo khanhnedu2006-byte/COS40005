@@ -69,8 +69,9 @@ def test_sbx_training_masks_checkpoint_and_inference(tmp_path):
     import jax.numpy as jnp
     import numpy as np
     from stable_baselines3.common.env_checker import check_env
-    from busroute.routing.ppo_od import (PPOConfig, Features, ODTrainingEnv, infer,
+    from busroute.routing.ppo_od import (PPOConfig, Features, ODTrainingEnv, PPOSearch, infer,
                                           load_coordinates, load_policy, train)
+    from busroute.routing.metaheuristics import _Search
     path = tmp_path / "matrix.csv"
     fields = ["from_id", "to_id", "from_lat", "from_lon", "to_lat", "to_lon", "to_type", "to_poi_score", "slot", "feasible", "duration_s", "pois_passed"]
     points = ["H1", "H2", "P1", "P2"]
@@ -113,6 +114,13 @@ def test_sbx_training_masks_checkpoint_and_inference(tmp_path):
         assert mask[int(action)]
     result = infer(model, features, "H1", "H2", 480, 3600)
     assert result == matrix.evaluate(result.route, 480, 3600)
+    solver = PPOSearch(model, features)
+    assert isinstance(solver, _Search)
+    assert solver(matrix, "H1", "H2", 480, 3600) == result
+    with pytest.raises(ValueError, match="supplied matrix"):
+        solver(small_matrix(), "H1", "H2", 480, 3600)
+    with pytest.raises(ValueError, match="feasible route"):
+        solver(matrix, "H1", "H2", 480, 1)
     path.write_text(path.read_text() + "\n")
     with pytest.raises(ValueError, match="matrix hash"):
         load_policy(str(checkpoint), str(path))

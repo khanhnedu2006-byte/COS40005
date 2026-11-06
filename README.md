@@ -18,14 +18,12 @@ pip install -e .
 python scripts/normalize_dataset.py --src <raw exports> --out dataset     # Step 0: unify raw exports
 python scripts/run_clean_gps.py --src dataset --out data/interim/gps   # Step 1
 python scripts/build_graph.py   --out data/processed                       # Steps 2–6
-python scripts/ppo_routes.py train --checkpoint checkpoints/ppo.zip         # OD-matrix PPO
+python scripts/train_ppo.py                                               # OD-matrix PPO
 pytest                                                                     # Tests
 ```
 
-`build_graph.py` generates `nodes.parquet` and `edges.parquet` in its output
-directory. The older `scripts/train_ppo.py` only loads those graph files; its
-graph-based training is not implemented. The PPO command above instead uses
-the OD matrix in `data/final/od_matrix.csv`.
+`build_graph.py` generates road graph files in its output directory. PPO uses
+the OD matrix in `data/final/od_matrix.csv`, rather than those graph files.
 
 ## Conventions
 - Variable / function / file names in **English**.
@@ -77,22 +75,27 @@ exist. Both methods are heuristics and do not guarantee an optimal result.
 
 Install the project dependencies with `pip install -e .`. PPO uses SBX's JAX
 implementation, Gymnasium, and a custom masked GraphSAGE actor. The OD
-pipeline reads `data/final/od_matrix.csv` by default; pass `--matrix PATH` before
-the subcommand to use another matrix. For example:
+pipeline reads `data/final/od_matrix.csv` by default. Pass `--matrix PATH` to
+`train_ppo.py`, or before the subcommand in `ppo_routes.py`, to use another matrix.
+For example:
 
 ```bash
-python scripts/ppo_routes.py train --checkpoint checkpoints/ppo.zip --seed 0
+python scripts/train_ppo.py --checkpoint checkpoints/ppo.zip --seed 0
 python scripts/ppo_routes.py infer --checkpoint checkpoints/ppo.zip --start H01 --end H02 --departure 08:00 --budget-min 240
 python scripts/ppo_routes.py evaluate --checkpoint checkpoints/ppo.zip --iterations 100 --output reports/ppo-evaluation.json
 ```
 
-Training defaults to 200,000 steps and 60–240 minute budgets. Use `train --help`
-for rollout, model and optimisation settings. Evaluation uses the fixed held-out
+Training defaults to 200,000 steps and 60–240 minute budgets. Use `python scripts/train_ppo.py --help`
+for rollout, model and optimisation settings. Both training commands create
+`checkpoints/ppo.zip` by default; `--checkpoint` changes the output path.
+Evaluation uses the fixed held-out
 scenarios saved by the training configuration and reports failures for each
 method; successful score and travel-time averages exclude failed cases. The
 checkpoint is tied to the exact matrix file by SHA-256. SBX collects complete
 rollouts, so training may exceed the requested step count by up to one rollout
 minus one step. The older custom PyTorch `.pt` checkpoints are not compatible.
+`PPOSearch` in `busroute.routing.ppo_od` implements the same callable solver
+interface as `ALNS` and `VNS`, using a loaded policy and its matrix features.
 
 The simulator uses each leg's departure slot, with no waiting or POI dwell time.
 The mask's return-time estimate freezes the arrival slot, so a slot change can

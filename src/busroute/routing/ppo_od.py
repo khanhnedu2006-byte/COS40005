@@ -17,6 +17,7 @@ from sbx import PPO
 from sbx.ppo.policies import Actor, Critic
 
 from busroute.routing.od_env import ODRouteEnv
+from busroute.routing.metaheuristics import _Search
 from busroute.routing.orienteering import ODMatrix
 
 
@@ -230,3 +231,21 @@ def infer(model, features: Features, start: str, end: str, minute: int, budget_s
     if env.current != end:
         return None
     return features.matrix.evaluate(env.route, minute, budget_s)
+
+
+class PPOSearch(_Search):
+    """Apply a trained PPO policy through the shared route solver interface."""
+
+    def __init__(self, model, features: Features):
+        super().__init__(iterations=0)
+        self.model = model
+        self.features = features
+
+    def __call__(self, matrix: ODMatrix, start: str, end: str,
+                 start_minute: int, budget_s: float):
+        if matrix is not self.features.matrix:
+            raise ValueError("PPO features must use the supplied matrix")
+        result = infer(self.model, self.features, start, end, start_minute, budget_s)
+        if result is None:
+            raise ValueError("PPO did not find a feasible route")
+        return result
