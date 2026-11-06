@@ -3,7 +3,7 @@ import csv
 
 import pytest
 
-from busroute.routing.metaheuristics import alns, vns
+from busroute.routing.metaheuristics import ALNS, VNS, Algorithm
 from busroute.routing.orienteering import Leg, ODMatrix
 
 
@@ -32,24 +32,26 @@ def test_evaluator_advances_slot_and_enforces_budget():
     assert matrix.evaluate(["A", "P1", "B"], 480, 120) is not None
 
 
-@pytest.mark.parametrize("solver", [alns, vns])
+@pytest.mark.parametrize("solver", [ALNS, VNS])
 def test_solvers_improve_and_are_reproducible(solver):
     matrix = fixture_matrix()
-    result = solver(matrix, "A", "B", 480, 180, iterations=6, seed=7)
-    assert result == solver(matrix, "A", "B", 480, 180, iterations=6, seed=7)
+    algorithm: Algorithm = solver(iterations=6, seed=7)
+    result = algorithm(matrix, "A", "B", 480, 180)
+    assert result == algorithm(matrix, "A", "B", 480, 180)
     assert result.route[0] == "A" and result.route[-1] == "B"
     assert result.score == 14
     assert matrix.evaluate(result.route, 480, 180) == result
 
 
-@pytest.mark.parametrize("solver", [alns, vns])
+@pytest.mark.parametrize("solver", [ALNS, VNS])
 def test_initial_route_falls_back_to_one_stop(solver):
     matrix = fixture_matrix()
     del matrix.legs[("A", "B", "morning")]
-    result = solver(matrix, "A", "B", 480, 120, iterations=0)
+    algorithm: Algorithm = solver(iterations=0)
+    result = algorithm(matrix, "A", "B", 480, 120)
     assert len(result.route) == 3
     with pytest.raises(ValueError, match="No feasible"):
-        solver(matrix, "A", "B", 480, 59, iterations=0)
+        algorithm(matrix, "A", "B", 480, 59)
 
 
 def test_csv_loader_handles_bom_and_infeasible_rows(tmp_path):
@@ -63,3 +65,9 @@ def test_csv_loader_handles_bom_and_infeasible_rows(tmp_path):
     matrix = ODMatrix.from_csv(path)
     assert matrix.evaluate(["A", "P1"], 480, 60).score == 5
     assert matrix.evaluate(["P1", "B"], 480, 60) is None
+
+
+@pytest.mark.parametrize("solver", [ALNS, VNS])
+def test_rejects_negative_iterations(solver):
+    with pytest.raises(ValueError, match="iterations"):
+        solver(iterations=-1)

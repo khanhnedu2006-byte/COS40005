@@ -1,0 +1,183 @@
+{
+  "ppo": {
+    "cases": 1,
+    "completed": 1,
+    "completion_rate": 1.0,
+    "budget_compliance_rate": 1.0,
+    "mean_score_successes": 8.916,
+    "mean_poi_count_successes": 2.0,
+    "mean_travel_s_successes": 4934.0,
+    "mean_runtime_ms": 3.613126000345801,
+    "results": [
+      {
+        "start": "H01",
+        "end": "H02",
+        "start_minute": 321,
+        "budget_s": 5520.0,
+        "completed": true,
+        "within_budget": true,
+        "score": 8.916,
+        "poi_count": 2,
+        "travel_s": 4934.0,
+        "runtime_ms": 3.613126000345801,
+        "route": [
+          "H01",
+          "P049",
+          "H02"
+        ],
+        "error": null
+      }
+    ]
+  },
+  "shortest": {
+    "cases": 1,
+    "completed": 1,
+    "completion_rate": 1.0,
+    "budget_compliance_rate": 1.0,
+    "mean_score_successes": 4.454,
+    "mean_poi_count_successes": 1.0,
+    "mean_travel_s_successes": 1997.0,
+    "mean_runtime_ms": 42.54349000075308,
+    "results": [
+      {
+        "start": "H01",
+        "end": "H02",
+        "start_minute": 321,
+        "budget_s": 5520.0,
+        "completed": true,
+        "within_budget": true,
+        "score": 4.454,
+        "poi_count": 1,
+        "travel_s": 1997.0,
+        "runtime_ms": 42.54349000075308,
+        "route": [
+          "H01",
+          "H02"
+        ],
+        "error": null
+      }
+    ]
+  },
+  "greedy": {
+    "cases": 1,
+    "completed": 1,
+    "completion_rate": 1.0,
+    "budget_compliance_rate": 1.0,
+    "mean_score_successes": 92.034,
+    "mean_poi_count_successes": 21.0,
+    "mean_travel_s_successes": 5328.0,
+    "mean_runtime_ms": 4.7199979999277275,
+    "results": [
+      {
+        "start": "H01",
+        "end": "H02",
+        "start_minute": 321,
+        "budget_s": 5520.0,
+        "completed": true,
+        "within_budget": true,
+        "score": 92.034,
+        "poi_count": 21,
+        "travel_s": 5328.0,
+        "runtime_ms": 4.7199979999277275,
+        "route": [
+          "H01",
+          "P021",
+          "P002",
+          "P001",
+          "P046",
+          "P044",
+          "P045",
+          "P038",
+          "P013",
+          "P022",
+          "H02"
+        ],
+        "error": null
+      }
+    ]
+  },
+  "alns": {
+    "cases": 1,
+    "completed": 1,
+    "completion_rate": 1.0,
+    "budget_compliance_rate": 1.0,
+    "mean_score_successes": 109.559,
+    "mean_poi_count_successes": 25.0,
+    "mean_travel_s_successes": 5470.0,
+    "mean_runtime_ms": 63.452720001805574,
+    "results": [
+      {
+        "start": "H01",
+        "end": "H02",
+        "start_minute": 321,
+        "budget_s": 5520.0,
+        "completed": true,
+        "within_budget": true,
+        "score": 109.559,
+        "poi_count": 25,
+        "travel_s": 5470.0,
+        "runtime_ms": 63.452720001805574,
+        "route": [
+          "H01",
+          "P038",
+          "P042",
+          "P033",
+          "P046",
+          "P003",
+          "P002",
+          "P001",
+          "P043",
+          "P009",
+          "P004",
+          "P021",
+          "P018",
+          "P019",
+          "H02"
+        ],
+        "error": null
+      }
+    ]
+  },
+  "vns": {
+    "cases": 1,
+    "completed": 1,
+    "completion_rate": 1.0,
+    "budget_compliance_rate": 1.0,
+    "mean_score_successes": 109.559,
+    "mean_poi_count_successes": 25.0,
+    "mean_travel_s_successes": 5470.0,
+    "mean_runtime_ms": 65.0381630002812,
+    "results": [
+      {
+        "start": "H01",
+        "end": "H02",
+        "start_minute": 321,
+        "budget_s": 5520.0,
+        "completed": true,
+        "within_budget": true,
+        "score": 109.559,
+        "poi_count": 25,
+        "travel_s": 5470.0,
+        "runtime_ms": 65.0381630002812,
+        "route": [
+          "H01",
+          "P038",
+          "P042",
+          "P033",
+          "P046",
+          "P003",
+          "P002",
+          "P001",
+          "P043",
+          "P009",
+          "P004",
+          "P021",
+          "P018",
+          "P019",
+          "H02"
+        ],
+        "error": null
+      }
+    ]
+  }
+}

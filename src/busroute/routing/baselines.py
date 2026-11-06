@@ -1,9 +1,13 @@
 """Baseline để so sánh với PPO: đường ngắn nhất và tham lam theo điểm POI / thời gian."""
 
+from collections.abc import Hashable, Iterable
+
 import networkx as nx
 
 
-def shortest_path_route(G, start, end, weight: str = "travel_time_morning"):
+def shortest_path_route(
+    G: nx.Graph, start: Hashable, end: Hashable, weight: str = "travel_time_morning"
+) -> list[Hashable]:
     """Find the shortest path using a single edge-weight attribute.
 
     Args:
@@ -22,9 +26,14 @@ def shortest_path_route(G, start, end, weight: str = "travel_time_morning"):
     return nx.shortest_path(G, start, end, weight=weight)
 
 
-def greedy_poi_route(G, start, end, poi_nodes, budget_s: float,
-                     weight: str = "travel_time_morning"):
+def greedy_poi_route(
+    G: nx.Graph, start: Hashable, end: Hashable, poi_nodes: Iterable[Hashable],
+    budget_s: float, weight: str = "travel_time_morning",
+) -> list[Hashable]:
     """Greedily visit POIs by score per travel time before reaching the end.
+
+    Uses fixed edge weights, not the time-dependent OD matrix. It does not
+    account for incidental POIs passed along shortest paths.
 
     Args:
         G: NetworkX graph whose POI nodes may have a `poi_score` attribute.
@@ -55,7 +64,7 @@ def greedy_poi_route(G, start, end, poi_nodes, budget_s: float,
                 ratio = (G.nodes[p].get("poi_score") or 0) / max(t_go, 1)
                 if ratio > best_ratio:
                     best, best_ratio, best_path, best_t = p, ratio, path, t_go
-        if best is None:
+        if best is None or best_path is None:
             break
         route += best_path[1:]
         used += best_t

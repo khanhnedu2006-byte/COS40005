@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from busroute.routing.metaheuristics import alns, vns
+from busroute.routing.metaheuristics import ALNS, VNS, Algorithm
 from busroute.routing.orienteering import ODMatrix
 from busroute.utils.timeslots import to_minutes
 
@@ -27,9 +27,11 @@ def main() -> None:
         if int(parts[0]) >= 24 or int(parts[1]) >= 60:
             raise ValueError("Departure must be a valid time in HH:MM")
         matrix = ODMatrix.from_csv(args.matrix)
-        algorithm = alns if args.algorithm == "alns" else vns
+        algorithm: Algorithm = (ALNS(iterations=args.iterations, seed=args.seed)
+                                if args.algorithm == "alns" else
+                                VNS(iterations=args.iterations, seed=args.seed))
         result = algorithm(matrix, args.start, args.end, to_minutes(args.departure),
-                           args.budget_min * 60, iterations=args.iterations, seed=args.seed)
+                           args.budget_min * 60)
     except (ValueError, OSError, KeyError) as exc:
         parser.exit(2, f"error: {exc}\n")
     print(json.dumps({"algorithm": args.algorithm, "route": result.route,

@@ -1,6 +1,11 @@
 """Môi trường RL: xe đi từ A tới B, chọn cạnh tiếp theo, tối đa điểm POI trong ngân sách thời gian."""
 
+from collections.abc import Hashable
+from typing import TypedDict
+
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 
 from busroute.utils.timeslots import slot_of
 
@@ -10,12 +15,34 @@ ARRIVAL_BONUS = 10.0  # thưởng khi tới B trong ngân sách
 FAIL_PENALTY = -20.0  # phạt khi hết giờ hoặc kẹt
 
 
+class Observation(TypedDict):
+    """Road-graph environment state and valid outgoing actions."""
+
+    current: int
+    time_left_ratio: float
+    minute_of_day: int
+    visited: list[int]
+    mask: npt.NDArray[np.bool_]
+
+
 class TourRouteEnv:
-    """State: node hiện tại, thời gian đã đi, giờ trong ngày, POI đã ghé. Action: chỉ số cạnh đi ra."""
+    """Legacy road-graph environment, not the 55-point OD-matrix simulator.
+
+    Nodes require node_idx and poi_score columns; edges require from_idx,
+    to_idx and blocked_<slot>/travel_time_<slot> columns. Actions index the
+    first max_degree outgoing edges. The PPO training loop is not implemented.
+    """
 
     def __init__(
-        self, nodes, edges, start_node, end_node, budget_min, start_minute, max_degree=8
-    ):
+        self,
+        nodes: pd.DataFrame,
+        edges: pd.DataFrame,
+        start_node: int,
+        end_node: int,
+        budget_min: float,
+        start_minute: int,
+        max_degree: int = 8,
+    ) -> None:
         self.nodes, self.edges = nodes, edges
         self.start, self.end = start_node, end_node
         self.budget_s, self.start_minute = budget_min * 60, start_minute
@@ -25,21 +52,22 @@ class TourRouteEnv:
         self.poi_score = dict(zip(nodes.node_idx, nodes.poi_score.fillna(0)))
         self.reset()
 
-    def reset(self) -> dict[str, object]:
+    def reset(self) -> Observation:
         """Start a new episode and return the observation at the start node."""
         self.current, self.elapsed_s = self.start, 0.0
-        self.visited_pois, self.path = set(), [self.start]
+        self.visited_pois: set[int] = set()
+        self.path: list[int] = [self.start]
         return self._obs()
 
     def minute_of_day(self) -> int:
         """Return the simulated local minute, wrapping at midnight."""
         return int(self.start_minute + self.elapsed_s // 60) % (24 * 60)
 
-    def candidate_edges(self) -> list:
+    def candidate_edges(self) -> list[Hashable]:
         """Return up to max_degree outgoing edge row labels for the current node."""
         return list(self.out_edges.get(self.current, []))[: self.max_degree]
 
-    def action_mask(self) -> np.ndarray:
+    def action_mask(self) -> npt.NDArray[np.bool_]:
         """Mark available outgoing actions that are not blocked in the current slot."""
         slot = slot_of(self.minute_of_day())
         mask = np.zeros(self.max_degree, dtype=bool)
@@ -47,9 +75,7 @@ class TourRouteEnv:
             mask[i] = not bool(self.edges.at[e, f"blocked_{slot}"])
         return mask
 
-    def step(
-        self, action: int
-    ) -> tuple[dict[str, object], float, bool, dict[str, float]]:
+    def step(self, action: int) -> tuple[Observation, float, bool, dict[str, float]]:
         """Traverse a permitted edge and return observation, reward, done, and info.
 
         POI scores are awarded once; arrival ends the episode before checking
@@ -89,7 +115,7 @@ class TourRouteEnv:
             done = True
         return self._obs(), reward, done, {"elapsed_min": self.elapsed_s / 60}
 
-    def _obs(self) -> dict[str, object]:
+    def _obs(self) -> Observation:
         """Build the current observation, including the current action mask."""
         return {
             "current": self.current,

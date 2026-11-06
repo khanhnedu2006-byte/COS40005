@@ -18,9 +18,14 @@ pip install -e .
 python scripts/normalize_dataset.py --src <raw exports> --out dataset     # Step 0: unify raw exports
 python scripts/run_clean_gps.py --src dataset --out data/interim/gps   # Step 1
 python scripts/build_graph.py   --out data/processed                       # Steps 2–6
-python scripts/train_ppo.py     --graph data/processed                     # Routing (PPO + GNN)
+python scripts/ppo_routes.py train --checkpoint checkpoints/ppo.zip         # OD-matrix PPO
 pytest                                                                     # Tests
 ```
+
+`build_graph.py` generates `nodes.parquet` and `edges.parquet` in its output
+directory. The older `scripts/train_ppo.py` only loads those graph files; its
+graph-based training is not implemented. The PPO command above instead uses
+the OD matrix in `data/final/od_matrix.csv`.
 
 ## Conventions
 - Variable / function / file names in **English**.
@@ -42,8 +47,18 @@ Use `--matrix data/final/od_matrix_mock.csv` for a mock-data smoke test. Output 
 JSON with the selected stops, total score, travel minutes and collected POI IDs.
 The mock matrix is not suitable for reporting real results.
 
-In Python, load `ODMatrix.from_csv(path)` and call `alns(...)` or `vns(...)`
-from `busroute.routing.metaheuristics`. Both return a typed `RouteResult`.
+In Python, construct `ALNS` or `VNS` and call the instance. Both implement the
+`Algorithm` protocol and return a typed `RouteResult`:
+
+```python
+from busroute.routing.metaheuristics import ALNS, Algorithm
+from busroute.routing.orienteering import ODMatrix
+
+matrix = ODMatrix.from_csv("data/final/od_matrix.csv")
+solver: Algorithm = ALNS(iterations=100, seed=42)  # Or VNS(...)
+result = solver(matrix, "H01", "H02", start_minute=480, budget_s=14400)
+```
+
 `start_minute` is minutes after midnight and `budget_s` is in seconds.
 `iterations` controls search effort; `seed` makes runs reproducible. Score is
 maximised first, with shorter travel time breaking ties. POIs passed on a leg
@@ -57,3 +72,29 @@ real-world compliance. The matrix's representative travel times are estimates,
 not live traffic. Search starts with a direct route or a feasible route through
 one POI. If neither exists, it reports failure even if a longer route could
 exist. Both methods are heuristics and do not guarantee an optimal result.
+
+## PPO routing on the OD matrix
+
+Install the project dependencies with `pip install -e .`. PPO uses SBX's JAX
+implementation, Gymnasium, and a custom masked GraphSAGE actor. The OD
+pipeline reads `data/final/od_matrix.csv` by default; pass `--matrix PATH` before
+the subcommand to use another matrix. For example:
+
+```bash
+python scripts/ppo_routes.py train --checkpoint checkpoints/ppo.zip --seed 0
+python scripts/ppo_routes.py infer --checkpoint checkpoints/ppo.zip --start H01 --end H02 --departure 08:00 --budget-min 240
+python scripts/ppo_routes.py evaluate --checkpoint checkpoints/ppo.zip --iterations 100 --output reports/ppo-evaluation.json
+```
+
+Training defaults to 200,000 steps and 60–240 minute budgets. Use `train --help`
+for rollout, model and optimisation settings. Evaluation uses the fixed held-out
+scenarios saved by the training configuration and reports failures for each
+method; successful score and travel-time averages exclude failed cases. The
+checkpoint is tied to the exact matrix file by SHA-256. SBX collects complete
+rollouts, so training may exceed the requested step count by up to one rollout
+minus one step. The older custom PyTorch `.pt` checkpoints are not compatible.
+
+The simulator uses each leg's departure slot, with no waiting or POI dwell time.
+The mask's return-time estimate freezes the arrival slot, so a slot change can
+still leave the agent without a valid continuation. Matrix feasibility itself is
+an approximation and should not be interpreted as field-validated road legality.

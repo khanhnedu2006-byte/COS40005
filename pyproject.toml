@@ -9,11 +9,14 @@ requires-python = ">=3.10"
 dependencies = [
     "fastparquet>=2026.9.0",
     "networkx>=3.4.2",
+    "osmnx>=2.0.7",
     "pandas>=2.3.3",
     "polars>=2.0.0",
     "pyarrow>=25.0.1",
     "pytest>=9.2.0",
+    "sbx-rl>=0.28.0",
     "scikit-learn-intelex>=2026.2.0",
+    "stable-baselines3>=2.9.2",
 ]
 
 [tool.setuptools.packages.find]
