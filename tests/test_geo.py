@@ -14,7 +14,9 @@ def test_point_in_square():
 
 
 def test_normalize_road_name():
-    assert normalize_road_name("Đường  Nguyễn Văn Linh ") == normalize_road_name("nguyễn văn linh")
+    assert normalize_road_name("Đường  Nguyễn Văn Linh ") == normalize_road_name(
+        "nguyễn văn linh"
+    )
 
 
 def test_time_windows():
@@ -27,4 +29,7 @@ def test_time_windows():
 def test_normalize_keeps_road_type_prefix():
     # "Đường tỉnh", "Đường cao tốc" là một phần của tên, không được bỏ
     assert normalize_road_name("Đường tỉnh 609") == "đường tỉnh 609"
-    assert normalize_road_name("Đường cao tốc Đà Nẵng - Quảng Ngãi") == "đường cao tốc đà nẵng - quảng ngãi"
+    assert (
+        normalize_road_name("Đường cao tốc Đà Nẵng - Quảng Ngãi")
+        == "đường cao tốc đà nẵng - quảng ngãi"
+    )

@@ -1,4 +1,5 @@
 """Chạy Bước 2–6: OSM → POI → thời gian → ràng buộc → kiểm tra liên thông → xuất dataset."""
+
 import argparse, glob, os
 
 import pandas as pd
@@ -19,8 +20,12 @@ if __name__ == "__main__":
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
 
-    G = fetch_road_graph(cfg["osm"].get("place"), cfg["osm"]["network_type"], cfg["osm"]["cache_dir"],
-                         bbox=cfg["osm"].get("bbox"))
+    G = fetch_road_graph(
+        cfg["osm"].get("place"),
+        cfg["osm"]["network_type"],
+        cfg["osm"]["cache_dir"],
+        bbox=cfg["osm"].get("bbox"),
+    )
     print("OSM graph:", G.number_of_nodes(), "nodes,", G.number_of_edges(), "edges")
 
     snapped, review = snap_pois(G, cfg["poi"]["max_snap_distance_m"])

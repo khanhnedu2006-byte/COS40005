@@ -1,7 +1,8 @@
 import difflib
 import pandas as pd
 from busroute.config.roads import MAIN_ROADS
-from busroute.utils.geo import normalize_road_name   
+from busroute.utils.geo import normalize_road_name
+
 osm = pd.read_csv("reports/osm_road_names.csv")
 
 osm["road_name"] = osm.road_name.fillna("").str.split(" \\| ")
@@ -23,8 +24,17 @@ for raw in MAIN_ROADS:
         sugg = " | ".join(dict.fromkeys(sub + fuzzy))
         rows.append((raw, norm, "MISS", 0.0, sugg, idempotent))
 
-df = pd.DataFrame(rows, columns=["main_road", "normalized", "status",
-                                 "osm_km", "suggestions", "idempotent"])
+df = pd.DataFrame(
+    rows,
+    columns=[
+        "main_road",
+        "normalized",
+        "status",
+        "osm_km",
+        "suggestions",
+        "idempotent",
+    ],
+)
 df.to_csv("reports/road_name_check.csv", index=False, encoding="utf-8-sig")
 
 print(df.to_string(index=False))

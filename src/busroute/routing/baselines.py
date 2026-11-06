@@ -1,14 +1,47 @@
 """Baseline để so sánh với PPO: đường ngắn nhất và tham lam theo điểm POI / thời gian."""
+
 import networkx as nx
 
 
-def shortest_path_route(G, start, end, weight="travel_time_morning"):
-    # Dijkstra theo thời gian di chuyển – mốc dưới cho điểm POI
+def shortest_path_route(G, start, end, weight: str = "travel_time_morning"):
+    """Find the shortest path using a single edge-weight attribute.
+
+    Args:
+        G: NetworkX graph.
+        start: Starting node ID.
+        end: Destination node ID.
+        weight: Edge attribute used as the path cost.
+
+    Returns:
+        An ordered list of node IDs including start and end.
+
+    Raises:
+        networkx.NetworkXNoPath: If the destination is unreachable.
+        networkx.NodeNotFound: If a requested node is absent.
+    """
     return nx.shortest_path(G, start, end, weight=weight)
 
 
-def greedy_poi_route(G, start, end, poi_nodes, budget_s, weight="travel_time_morning"):
-    # Liên tục chọn POI chưa ghé có (điểm / thời gian) cao nhất mà vẫn kịp về B trong ngân sách
+def greedy_poi_route(G, start, end, poi_nodes, budget_s: float,
+                     weight: str = "travel_time_morning"):
+    """Greedily visit POIs by score per travel time before reaching the end.
+
+    Args:
+        G: NetworkX graph whose POI nodes may have a `poi_score` attribute.
+        start: Starting node ID.
+        end: Destination node ID.
+        poi_nodes: Candidate POI node IDs.
+        budget_s: Maximum total travel time in seconds for selecting a POI.
+        weight: Edge travel-time attribute, in seconds.
+
+    Returns:
+        An ordered list of node IDs, including start and end. If no POI is
+        selected, the direct shortest path may itself exceed the budget.
+
+    Raises:
+        networkx.NetworkXNoPath: If the final destination is unreachable.
+        networkx.NodeNotFound: If a requested node is absent.
+    """
     route, current, used, remaining = [start], start, 0.0, set(poi_nodes)
     while remaining:
         best, best_ratio, best_path, best_t = None, 0.0, None, 0.0

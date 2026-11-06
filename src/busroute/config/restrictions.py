@@ -3,14 +3,18 @@
 import json
 from pathlib import Path
 
-RING_FILE = Path(__file__).resolve().parents[3] / "data" / "references" / "central_ring.geojson"
+RING_FILE = (
+    Path(__file__).resolve().parents[3] / "data" / "references" / "central_ring.geojson"
+)
+
 
 def load_ring_polygon(path):
-    data =  json.loads(Path(path).read_text(encoding="utf-8"))["features"][0]
+    data = json.loads(Path(path).read_text(encoding="utf-8"))["features"][0]
     polygon = data["geometry"]["coordinates"][0]
     return [(lat, lon) for lon, lat in polygon], data["properties"]
 
-_ring,_props = load_ring_polygon(RING_FILE)
+
+_ring, _props = load_ring_polygon(RING_FILE)
 
 TIME_BANNED_AREAS = [
     {
@@ -24,4 +28,4 @@ TIME_BANNED_AREAS = [
 ]
 
 # Ranh giới thành phố Đà Nẵng mới (sau sáp nhập 01/07/2025) nếu Nominatim chưa cập nhật
-BOUNDARY_POLYGON = []   # TODO: danh sách (lat, lon)
+BOUNDARY_POLYGON = []  # TODO: danh sách (lat, lon)

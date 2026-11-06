@@ -14,9 +14,14 @@ edges["inside"] = [point_in_polygon(a, b, poly) for a, b in zip(mid_lat, mid_lon
 print("Số cạnh trong vành đai:", int(edges.inside.sum()), "/", len(edges))
 
 # Kiểm tra mẫu: tên đường → kỳ vọng (True = phải nằm trong)
-expected = {"lê duẩn": True, "hùng vương": True,          # trong trung tâm
-            "điện biên phủ": False, "bạch đằng": False,     # tuyến bao
-            "võ nguyên giáp": False, "ngô quyền": False}    # bên kia sông Hàn
+expected = {
+    "lê duẩn": True,
+    "hùng vương": True,  # trong trung tâm
+    "điện biên phủ": False,
+    "bạch đằng": False,  # tuyến bao
+    "võ nguyên giáp": False,
+    "ngô quyền": False,
+}  # bên kia sông Hàn
 for name, want in expected.items():
     share = edges[edges.road_name.str.contains(name, regex=False)].inside.mean()
     status = "OK" if (share > 0.8) == want else "SAI"

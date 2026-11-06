@@ -1,15 +1,33 @@
 """Chuẩn hoá mọi file log GPS (bản export cũ và mới) về cùng một định dạng, mỗi cột một thông tin."""
+
 import argparse, glob, os, re
 
 import pandas as pd
 
 # Tên cột của hai định dạng export → tên chuẩn
-COLUMN_ALIASES = {"Ngày tháng": "timestamp", "Vĩ độ": "latitude", "Kinh độ": "longitude"}
+COLUMN_ALIASES = {
+    "Ngày tháng": "timestamp",
+    "Vĩ độ": "latitude",
+    "Kinh độ": "longitude",
+}
 # Biển số chuẩn hoá → mã ẩn danh (khớp với slide)
-PLATE_TO_BUS = {"43F00409": "bus_01", "43H11687": "bus_02", "43H14909": "bus_03",
-                "43B05169": "bus_04", "43B05367": "bus_05"}
-OUTPUT_COLUMNS = ["bus_id", "plate", "timestamp", "latitude", "longitude",
-                  "device_speed_kmh", "device_km", "time_precision"]
+PLATE_TO_BUS = {
+    "43F00409": "bus_01",
+    "43H11687": "bus_02",
+    "43H14909": "bus_03",
+    "43B05169": "bus_04",
+    "43B05367": "bus_05",
+}
+OUTPUT_COLUMNS = [
+    "bus_id",
+    "plate",
+    "timestamp",
+    "latitude",
+    "longitude",
+    "device_speed_kmh",
+    "device_km",
+    "time_precision",
+]
 
 
 def plate_from_filename(path):
@@ -34,18 +52,24 @@ def normalize_file(path):
     # Tách cột gộp "V / KM / L": V = tốc độ thiết bị (km/h), KM = quãng đường thiết bị báo, L = nhiên liệu (luôn trống → bỏ)
     parts = df["V/KM/L"].astype(str).str.split("/", expand=True)
     plate = plate_from_filename(path)
-    out = pd.DataFrame({
-        "bus_id": PLATE_TO_BUS[plate],
-        "plate": f"{plate[:3]}-{plate[3:]}",
-        "timestamp": ts.dt.strftime("%Y-%m-%d %H:%M:%S"),
-        "latitude": pd.to_numeric(df["latitude"], errors="coerce"),
-        "longitude": pd.to_numeric(df["longitude"], errors="coerce"),
-        "device_speed_kmh": pd.to_numeric(parts[0].str.strip(), errors="coerce"),
-        "device_km": pd.to_numeric(parts[1].str.strip(), errors="coerce"),
-        "time_precision": precision,
-    })[OUTPUT_COLUMNS]
+    out = pd.DataFrame(
+        {
+            "bus_id": PLATE_TO_BUS[plate],
+            "plate": f"{plate[:3]}-{plate[3:]}",
+            "timestamp": ts.dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "latitude": pd.to_numeric(df["latitude"], errors="coerce"),
+            "longitude": pd.to_numeric(df["longitude"], errors="coerce"),
+            "device_speed_kmh": pd.to_numeric(parts[0].str.strip(), errors="coerce"),
+            "device_km": pd.to_numeric(parts[1].str.strip(), errors="coerce"),
+            "time_precision": precision,
+        }
+    )[OUTPUT_COLUMNS]
     # Bỏ dòng trùng hoàn toàn và dòng thiếu toạ độ – không mang thông tin
-    out = out.drop_duplicates().dropna(subset=["latitude", "longitude"]).reset_index(drop=True)
+    out = (
+        out.drop_duplicates()
+        .dropna(subset=["latitude", "longitude"])
+        .reset_index(drop=True)
+    )
     return out, len(df)
 
 
@@ -63,4 +87,6 @@ if __name__ == "__main__":
         day = out["timestamp"].str[:10].iloc[0]
         name = f"{out['plate'].iloc[0]}_{day}.csv"
         out.to_csv(os.path.join(args.out, name), index=False, encoding="utf-8")
-        print(f"{os.path.basename(path):28s} → {name:26s} {n_raw:5d} → {len(out):5d} dòng")
+        print(
+            f"{os.path.basename(path):28s} → {name:26s} {n_raw:5d} → {len(out):5d} dòng"
+        )

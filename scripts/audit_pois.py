@@ -11,6 +11,7 @@ Cờ cảnh báo:
 - inside_ring     : nằm sâu trong vành đai (> 25 m từ mép) → giờ cấm không tới được
 - near_ring_edge  : cách mép vành đai < 60 m → nên đặt hẳn ra phía đường bao
 """
+
 import csv
 import math
 import sys
@@ -22,21 +23,34 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "configs"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from busroute.config.restrictions import TIME_BANNED_AREAS   # noqa: E402
-from busroute.utils.geo import point_in_polygon               # noqa: E402
+from busroute.config.restrictions import TIME_BANNED_AREAS  # noqa: E402
+from busroute.utils.geo import point_in_polygon  # noqa: E402
 from fetch_routes import load_points, dist_to_polygon_edge_m, RING_EDGE_BAND_M  # noqa: E402
 
 GRAPHML = ROOT / "data" / "cache" / "road_graph_drive.graphml"
 OUT = ROOT / "reports" / "poi_audit.csv"
-MAJOR = {"motorway", "trunk", "primary", "secondary", "tertiary",
-         "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link"}
+MAJOR = {
+    "motorway",
+    "trunk",
+    "primary",
+    "secondary",
+    "tertiary",
+    "motorway_link",
+    "trunk_link",
+    "primary_link",
+    "secondary_link",
+    "tertiary_link",
+}
 NS = "{http://graphml.graphdrawing.org/xmlns}"
 
 
 def load_edges(points, radius_deg=0.01):
     # Đọc graphml theo luồng, chỉ giữ cạnh nằm gần một POI (≈1 km) để tiết kiệm bộ nhớ
     keys, nodes, edges = {}, {}, []
-    near = lambda la, lo: any(abs(la - p["lat"]) < radius_deg and abs(lo - p["lon"]) < radius_deg for p in points)
+    near = lambda la, lo: any(
+        abs(la - p["lat"]) < radius_deg and abs(lo - p["lon"]) < radius_deg
+        for p in points
+    )
     for _, el in ET.iterparse(GRAPHML, events=("end",)):
         tag = el.tag.replace(NS, "")
         if tag == "key":
@@ -49,13 +63,27 @@ def load_edges(points, radius_deg=0.01):
             d = {keys[c.get("key")]: c.text for c in el}
             if "geometry" in d:
                 # LINESTRING (lon lat, lon lat, ...)
-                coords = [(float(b), float(a)) for a, b in
-                          (xy.split() for xy in d["geometry"][d["geometry"].index("(") + 1:-1].split(","))]
+                coords = [
+                    (float(b), float(a))
+                    for a, b in (
+                        xy.split()
+                        for xy in d["geometry"][
+                            d["geometry"].index("(") + 1 : -1
+                        ].split(",")
+                    )
+                ]
             else:
                 coords = [nodes[el.get("source")], nodes[el.get("target")]]
             if any(near(*c) for c in coords[:: max(1, len(coords) // 4)] + coords[-1:]):
-                edges.append({"coords": coords, "name": d.get("name") or "", "highway": d.get("highway") or "",
-                              "bridge": d.get("bridge") or "", "oneway": d.get("oneway") or ""})
+                edges.append(
+                    {
+                        "coords": coords,
+                        "name": d.get("name") or "",
+                        "highway": d.get("highway") or "",
+                        "bridge": d.get("bridge") or "",
+                        "oneway": d.get("oneway") or "",
+                    }
+                )
             el.clear()
     return edges
 
@@ -75,7 +103,9 @@ def point_seg(p, a, b):
 def nearest(p, edges, only_major=False):
     best = (float("inf"), None, None)
     for e in edges:
-        if only_major and not any(h in MAJOR for h in e["highway"].strip("[]").replace("'", "").split(", ")):
+        if only_major and not any(
+            h in MAJOR for h in e["highway"].strip("[]").replace("'", "").split(", ")
+        ):
             continue
         for a, b in zip(e["coords"], e["coords"][1:]):
             d, proj = point_seg(p, a, b)
@@ -107,14 +137,29 @@ if __name__ == "__main__":
             flags.append("inside_ring")
         elif d_edge < 60:
             flags.append("near_ring_edge")
-        rows.append({"id": p["id"], "name": p["name"], "lat": p["lat"], "lon": p["lon"],
-                     "nearest_road": e_any["name"] if e_any else "", "nearest_road_class": e_any["highway"] if e_any else "",
-                     "dist_road_m": round(d_any), "nearest_major": e_major["name"] if e_major else "",
-                     "dist_major_m": round(d_major), "ring": "inside" if in_poly else "outside",
-                     "dist_ring_edge_m": round(d_edge), "flags": ";".join(flags),
-                     # Toạ độ đề xuất = điểm gần nhất trên đường chính (chỉ gợi ý, nhóm duyệt trước khi thay)
-                     "suggest_lat": round(snap[0], 5) if snap and "far_from_road" in flags else "",
-                     "suggest_lon": round(snap[1], 5) if snap and "far_from_road" in flags else ""})
+        rows.append(
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "lat": p["lat"],
+                "lon": p["lon"],
+                "nearest_road": e_any["name"] if e_any else "",
+                "nearest_road_class": e_any["highway"] if e_any else "",
+                "dist_road_m": round(d_any),
+                "nearest_major": e_major["name"] if e_major else "",
+                "dist_major_m": round(d_major),
+                "ring": "inside" if in_poly else "outside",
+                "dist_ring_edge_m": round(d_edge),
+                "flags": ";".join(flags),
+                # Toạ độ đề xuất = điểm gần nhất trên đường chính (chỉ gợi ý, nhóm duyệt trước khi thay)
+                "suggest_lat": round(snap[0], 5)
+                if snap and "far_from_road" in flags
+                else "",
+                "suggest_lon": round(snap[1], 5)
+                if snap and "far_from_road" in flags
+                else "",
+            }
+        )
     OUT.parent.mkdir(exist_ok=True)
     with open(OUT, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -123,5 +168,7 @@ if __name__ == "__main__":
     flagged = [r for r in rows if r["flags"]]
     print(f"Đã ghi {OUT}: {len(rows)} điểm, {len(flagged)} điểm có cảnh báo")
     for r in flagged:
-        print(f"  {r['id']} {r['name'][:32]:32} {r['flags']:40} đường gần nhất: {r['nearest_road'][:25]} "
-              f"({r['dist_road_m']} m), đường chính: {r['nearest_major'][:25]} ({r['dist_major_m']} m)")
+        print(
+            f"  {r['id']} {r['name'][:32]:32} {r['flags']:40} đường gần nhất: {r['nearest_road'][:25]} "
+            f"({r['dist_road_m']} m), đường chính: {r['nearest_major'][:25]} ({r['dist_major_m']} m)"
+        )

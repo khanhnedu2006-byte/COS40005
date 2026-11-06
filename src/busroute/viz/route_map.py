@@ -1,4 +1,5 @@
 """Vẽ lộ trình và POI lên bản đồ HTML (folium)."""
+
 import folium
 
 
@@ -9,6 +10,8 @@ def draw_route(G, route, out_html, pois=None):
     folium.Marker(coords[0], tooltip="A (start)").add_to(m)
     folium.Marker(coords[-1], tooltip="B (end)").add_to(m)
     for p in pois or []:
-        folium.CircleMarker((p["lat"], p["lon"]), radius=6, tooltip=p["name"], fill=True).add_to(m)
+        folium.CircleMarker(
+            (p["lat"], p["lon"]), radius=6, tooltip=p["name"], fill=True
+        ).add_to(m)
     m.save(out_html)
     return out_html

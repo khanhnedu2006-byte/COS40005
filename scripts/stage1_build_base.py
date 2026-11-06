@@ -4,6 +4,7 @@ Người phụ trách: Nguyen Nam Khanh
 Chạy:  python scripts/stage1_build_base.py
 Sau đó: python scripts/check_stage1.py
 """
+
 import argparse
 import os
 import time
@@ -23,8 +24,12 @@ if __name__ == "__main__":
 
     t0 = time.time()
     # Lần đầu gọi Overpass (có thể lâu); các lần sau đọc từ data/cache/road_graph_drive.graphml
-    G = fetch_road_graph(cfg.get("place"), cfg["network_type"], cfg["cache_dir"], bbox=cfg.get("bbox"))
-    print(f"Đồ thị OSM: {G.number_of_nodes():,} node, {G.number_of_edges():,} cạnh ({time.time() - t0:.0f}s)")
+    G = fetch_road_graph(
+        cfg.get("place"), cfg["network_type"], cfg["cache_dir"], bbox=cfg.get("bbox")
+    )
+    print(
+        f"Đồ thị OSM: {G.number_of_nodes():,} node, {G.number_of_edges():,} cạnh ({time.time() - t0:.0f}s)"
+    )
 
     nodes, edges = build_base_tables(G)
     names = road_name_summary(edges)
@@ -33,7 +38,11 @@ if __name__ == "__main__":
     os.makedirs(args.reports, exist_ok=True)
     nodes.to_parquet(os.path.join(args.out, "nodes_base.parquet"), index=False)
     edges.to_parquet(os.path.join(args.out, "edges_base.parquet"), index=False)
-    names.to_csv(os.path.join(args.reports, "osm_road_names.csv"), index=False, encoding="utf-8-sig")
+    names.to_csv(
+        os.path.join(args.reports, "osm_road_names.csv"),
+        index=False,
+        encoding="utf-8-sig",
+    )
 
     print(f"Đã ghi {args.out}/nodes_base.parquet ({len(nodes):,} dòng)")
     print(f"Đã ghi {args.out}/edges_base.parquet ({len(edges):,} dòng)")

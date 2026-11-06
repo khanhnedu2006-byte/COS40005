@@ -1,4 +1,5 @@
 """Bước 2 – Lấy đồ thị đường từ OSM qua Overpass API. OSM CHỈ là bản đồ nền, không lọc đường ở đây."""
+
 import os
 import time
 
@@ -14,14 +15,16 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.private.coffee/api",
     "https://maps.mail.ru/osm/tools/overpass/api",
 ]
-MAX_ROUNDS = 4          # số vòng thử lại toàn bộ danh sách máy chủ
-FIRST_WAIT_S = 30       # thời gian chờ ban đầu, gấp đôi sau mỗi vòng (exponential backoff)
+MAX_ROUNDS = 4  # số vòng thử lại toàn bộ danh sách máy chủ
+FIRST_WAIT_S = 30  # thời gian chờ ban đầu, gấp đôi sau mỗi vòng (exponential backoff)
 
 
 def _download(network_type, bbox, place):
     # Thứ tự ưu tiên vùng lấy bản đồ: BOUNDARY_POLYGON → bbox → place (place cần Nominatim)
     if BOUNDARY_POLYGON:
-        poly = Polygon([(lon, lat) for lat, lon in BOUNDARY_POLYGON])   # shapely dùng (lon, lat)
+        poly = Polygon(
+            [(lon, lat) for lat, lon in BOUNDARY_POLYGON]
+        )  # shapely dùng (lon, lat)
         return ox.graph_from_polygon(poly, network_type=network_type, simplify=True)
     if bbox:
         # bbox = [west, south, east, north] (osmnx 2.x)
@@ -29,7 +32,26 @@ def _download(network_type, bbox, place):
     return ox.graph_from_place(place, network_type=network_type, simplify=True)
 
 
-def fetch_road_graph(place=None, network_type="drive", cache_dir="data/cache", bbox=None):
+def fetch_road_graph(
+    place=None, network_type="drive", cache_dir="data/cache", bbox=None
+):
+    """Load a cached road graph or download its largest strong component.
+
+    A configured boundary polygon takes precedence over `bbox` and `place`.
+    The cache filename depends on network type, not the requested area.
+
+    Args:
+        place: Place query used when no polygon or bounding box is configured.
+        network_type: OSMnx network type to download.
+        cache_dir: Directory for the GraphML file and OSMnx request cache.
+        bbox: Optional bounding box in west, south, east, north order.
+
+    Returns:
+        A directed road multigraph, loaded from cache or downloaded.
+
+    Raises:
+        RuntimeError: If all configured download attempts fail.
+    """
     os.makedirs(cache_dir, exist_ok=True)
     graph_file = os.path.join(cache_dir, f"road_graph_{network_type}.graphml")
     if os.path.exists(graph_file):
@@ -54,7 +76,7 @@ def fetch_road_graph(place=None, network_type="drive", cache_dir="data/cache", b
                 G = ox.truncate.largest_component(G, strongly=True)
                 ox.save_graphml(G, graph_file)
                 return G
-            except Exception as err:   # quá tải (502/504), hết thời gian, mất kết nối
+            except Exception as err:  # quá tải (502/504), hết thời gian, mất kết nối
                 last_error = err
                 print(f"  lỗi: {str(err).splitlines()[0][:120]}")
         print(f"Mọi máy chủ đều lỗi, chờ {wait}s rồi thử lại...")

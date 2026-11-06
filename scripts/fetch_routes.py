@@ -17,6 +17,7 @@ Lưu ý:
 - k(slot) đọc từ data/stage3/gps_calibration.csv; chưa có thì k = 1.0 và in cảnh báo.
 - API key đọc từ .env (TOMTOM_API_KEY / GOONG_API_KEY), không bao giờ in ra màn hình.
 """
+
 import argparse
 import csv
 import http.client
@@ -34,13 +35,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "configs"))
 
-from busroute.config.restrictions import TIME_BANNED_AREAS   # noqa: E402
-from busroute.utils.geo import point_in_polygon               # noqa: E402
-from busroute.utils.timeslots import TIME_SLOTS, to_minutes   # noqa: E402
+from busroute.config.restrictions import TIME_BANNED_AREAS  # noqa: E402
+from busroute.utils.geo import point_in_polygon  # noqa: E402
+from busroute.utils.timeslots import TIME_SLOTS, to_minutes  # noqa: E402
 
 import datetime as dt
 
-RAW_DIR = ROOT / "data" / "cache"                               # data/cache/ đã nằm trong .gitignore
+RAW_DIR = ROOT / "data" / "cache"  # data/cache/ đã nằm trong .gitignore
 CALIB_FILE = ROOT / "data" / "stage3" / "gps_calibration.csv"
 OUT_FILE = ROOT / "data" / "final" / "od_matrix.csv"
 PROVIDERS = {
@@ -48,28 +49,51 @@ PROVIDERS = {
     "goong": {"key": "GOONG_API_KEY", "per_slot": False, "rps": 4, "daily": 25000},
 }
 # Giờ đại diện cho mỗi khung giờ (giờ Việt Nam), dùng làm departAt cho TomTom
-SLOT_DEPART = {"morning": "08:00", "ban_noon": "11:15", "afternoon": "14:30",
-               "ban_evening": "17:45", "night": "20:30"}
+SLOT_DEPART = {
+    "morning": "08:00",
+    "ban_noon": "11:15",
+    "afternoon": "14:30",
+    "ban_evening": "17:45",
+    "night": "20:30",
+}
 # Kích thước xe 45 chỗ (ước lượng) – TomTom dùng để tránh đường quá hẹp / quá thấp.
 # KHÔNG khai vehicleWeight: TomTom sẽ áp giờ cấm xe tải nặng ở Đà Nẵng (bắt đi vòng 31 km
 # thay vì 12 km lúc 11:15), không phải luật cho xe khách. Luật cấm xe khách = đa giác vành đai.
 BUS_DIMENSIONS = {"vehicleLength": 12.0, "vehicleWidth": 2.5, "vehicleHeight": 3.6}
-PASS_RADIUS_M = 100           # POI cách tuyến ≤ 100 m thì tính là "chạy ngang qua"
-DENSIFY_STEP_M = 20           # chèn điểm mỗi 20 m để kiểm tra vành đai không bị lọt
+PASS_RADIUS_M = 100  # POI cách tuyến ≤ 100 m thì tính là "chạy ngang qua"
+DENSIFY_STEP_M = 20  # chèn điểm mỗi 20 m để kiểm tra vành đai không bị lọt
 
 
 # ------------------------------------------------------------------ điểm
 def load_points():
     # 50 POI từ configs/pois.py + hub (nếu đã có configs/hubs.py), mã hoá P001 / H01
     from pois import POIS
-    points = [{"id": f"P{int(p['poi_id']):03d}", "type": "poi", "name": p["name"],
-               "lat": float(p["coordinates"][0]), "lon": float(p["coordinates"][1]),
-               "score": float(p.get("score") or 0)} for p in POIS]
+
+    points = [
+        {
+            "id": f"P{int(p['poi_id']):03d}",
+            "type": "poi",
+            "name": p["name"],
+            "lat": float(p["coordinates"][0]),
+            "lon": float(p["coordinates"][1]),
+            "score": float(p.get("score") or 0),
+        }
+        for p in POIS
+    ]
     try:
         from hubs import HUBS
-        points += [{"id": h["hub_id"], "type": "hub", "name": h["name"],
-                    "lat": float(h["coordinates"][0]), "lon": float(h["coordinates"][1]),
-                    "score": 0.0} for h in HUBS]
+
+        points += [
+            {
+                "id": h["hub_id"],
+                "type": "hub",
+                "name": h["name"],
+                "lat": float(h["coordinates"][0]),
+                "lon": float(h["coordinates"][1]),
+                "score": 0.0,
+            }
+            for h in HUBS
+        ]
     except ImportError:
         print("Chưa có configs/hubs.py → chỉ dùng POI")
     return points
@@ -100,7 +124,7 @@ def depart_time(slot):
 # ------------------------------------------------------------------ hình học
 def decode_polyline(encoded, precision=5):
     # Giải mã polyline dạng Google (Goong dùng cùng định dạng) → [(lat, lon), ...]
-    coords, index, lat, lon, factor = [], 0, 0, 0, 10 ** precision
+    coords, index, lat, lon, factor = [], 0, 0, 0, 10**precision
     while index < len(encoded):
         for is_lon in (False, True):
             shift = result = 0
@@ -132,22 +156,31 @@ def densify(coords, step=DENSIFY_STEP_M):
     out = coords[:1]
     for a, b in zip(coords, coords[1:]):
         n = max(1, int(dist_m(a, b) // step))
-        out += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(1, n + 1)]
+        out += [
+            (a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
+            for k in range(1, n + 1)
+        ]
     return out
 
 
-RING_END_SKIP_M = 300      # bỏ qua 300 m đầu/cuối: POI nằm sát đường bao thì đoạn tiếp cận có thể lọt vào trong
-RING_TOLERANCE_M = 200     # tổng chiều dài nằm trong vành đai > 200 m mới coi là "đi vào vành đai"
-RING_EDGE_BAND_M = 25      # dải 25 m sát mép đa giác = đường bao (được phép đi); bù sai số khi vẽ đa giác
+RING_END_SKIP_M = 300  # bỏ qua 300 m đầu/cuối: POI nằm sát đường bao thì đoạn tiếp cận có thể lọt vào trong
+RING_TOLERANCE_M = (
+    200  # tổng chiều dài nằm trong vành đai > 200 m mới coi là "đi vào vành đai"
+)
+RING_EDGE_BAND_M = (
+    25  # dải 25 m sát mép đa giác = đường bao (được phép đi); bù sai số khi vẽ đa giác
+)
 # Trục xe trên 30 chỗ được đi trong vành đai: Công văn 1710/UBND-SGTVT (04/2022, thí điểm kích cầu du lịch).
 # GPS 14/10/2026: xe 45 chỗ thật đi Duy Tân lúc 17:22 và 18:19 → trục vẫn đang dùng.
 ALLOWED_CORRIDORS = ["duy tân", "nguyễn văn trỗi", "trần thị lý"]
-CORRIDOR_BAND_M = 30       # điểm cách trục ≤ 30 m coi như đang đi trên trục
+CORRIDOR_BAND_M = 30  # điểm cách trục ≤ 30 m coi như đang đi trên trục
 # Điểm (POI/hub) nằm trong vành đai: giờ cấm KHÔNG tới/đi được, trừ khi sát đường bao (≤ 100 m – xe chạy ngang
 # trên đường bao vẫn thấy) hoặc nằm trên trục được phép (≤ 50 m). Toạ độ POI là tâm công trình nên cho 100 m.
 ENDPOINT_EDGE_OK_M = 100
 ENDPOINT_CORRIDOR_OK_M = 50
-AVOID_INSET_M = 40         # vùng tránh gửi TomTom lùi vào trong mép vành đai / cách trục ít nhất 40 m
+AVOID_INSET_M = (
+    40  # vùng tránh gửi TomTom lùi vào trong mép vành đai / cách trục ít nhất 40 m
+)
 _CORRIDOR_SEGS = None
 
 
@@ -156,7 +189,10 @@ def corridor_segments():
     global _CORRIDOR_SEGS
     if _CORRIDOR_SEGS is None:
         import pandas as pd
-        nodes = pd.read_parquet(ROOT / "data" / "stage1" / "nodes_base.parquet").set_index("node_idx")
+
+        nodes = pd.read_parquet(
+            ROOT / "data" / "stage1" / "nodes_base.parquet"
+        ).set_index("node_idx")
         edges = pd.read_parquet(ROOT / "data" / "stage1" / "edges_base.parquet")
         poly = TIME_BANNED_AREAS[0]["polygon"]
         lats = [q[0] for q in poly]
@@ -166,7 +202,9 @@ def corridor_segments():
         for f, t in zip(edges[mask].from_idx, edges[mask].to_idx):
             a = (nodes.lat[f], nodes.lon[f])
             b = (nodes.lat[t], nodes.lon[t])
-            if (min(lats) - 0.01 <= a[0] <= max(lats) + 0.01) and (min(lons) - 0.01 <= a[1] <= max(lons) + 0.01):
+            if (min(lats) - 0.01 <= a[0] <= max(lats) + 0.01) and (
+                min(lons) - 0.01 <= a[1] <= max(lons) + 0.01
+            ):
                 segs.append((a, b))
         _CORRIDOR_SEGS = segs
     return _CORRIDOR_SEGS
@@ -208,9 +246,12 @@ def ring_inside_m(coords, polygon, skip=RING_END_SKIP_M, band=RING_EDGE_BAND_M):
         cum.append(cum[-1] + dist_m(a, b))
     total, inside = cum[-1], 0.0
     for i in range(1, len(coords)):
-        if (skip <= cum[i] <= total - skip and point_in_polygon(*coords[i], polygon)
-                and dist_to_polygon_edge_m(coords[i], polygon) > band
-                and dist_to_segments_m(coords[i], corridor_segments()) > CORRIDOR_BAND_M):
+        if (
+            skip <= cum[i] <= total - skip
+            and point_in_polygon(*coords[i], polygon)
+            and dist_to_polygon_edge_m(coords[i], polygon) > band
+            and dist_to_segments_m(coords[i], corridor_segments()) > CORRIDOR_BAND_M
+        ):
             inside += cum[i] - cum[i - 1]
     return inside
 
@@ -226,12 +267,26 @@ def ring_rectangles(polygon, n_rect=10, grid=120, min_cells=4):
     segs = corridor_segments()
 
     def deep_inside(la, lo):
-        return (point_in_polygon(la, lo, polygon)
-                and dist_to_polygon_edge_m((la, lo), polygon) > AVOID_INSET_M
-                and dist_to_segments_m((la, lo), segs) > AVOID_INSET_M)
-    corner = [[deep_inside(s_ + i * dlat, w_ + j * dlon) for j in range(grid + 1)] for i in range(grid + 1)]
-    free = [[corner[i][j] and corner[i + 1][j] and corner[i][j + 1] and corner[i + 1][j + 1]
-             for j in range(grid)] for i in range(grid)]
+        return (
+            point_in_polygon(la, lo, polygon)
+            and dist_to_polygon_edge_m((la, lo), polygon) > AVOID_INSET_M
+            and dist_to_segments_m((la, lo), segs) > AVOID_INSET_M
+        )
+
+    corner = [
+        [deep_inside(s_ + i * dlat, w_ + j * dlon) for j in range(grid + 1)]
+        for i in range(grid + 1)
+    ]
+    free = [
+        [
+            corner[i][j]
+            and corner[i + 1][j]
+            and corner[i][j + 1]
+            and corner[i + 1][j + 1]
+            for j in range(grid)
+        ]
+        for i in range(grid)
+    ]
     rects = []
     for _ in range(n_rect):
         # Hình chữ nhật lớn nhất toàn ô True (thuật toán histogram theo từng hàng)
@@ -255,9 +310,18 @@ def ring_rectangles(polygon, n_rect=10, grid=120, min_cells=4):
         for i in range(i0, i1 + 1):
             for j in range(j0, j1 + 1):
                 free[i][j] = False
-        rects.append({"southWestCorner": {"latitude": round(s_ + i0 * dlat, 6), "longitude": round(w_ + j0 * dlon, 6)},
-                      "northEastCorner": {"latitude": round(s_ + (i1 + 1) * dlat, 6),
-                                          "longitude": round(w_ + (j1 + 1) * dlon, 6)}})
+        rects.append(
+            {
+                "southWestCorner": {
+                    "latitude": round(s_ + i0 * dlat, 6),
+                    "longitude": round(w_ + j0 * dlon, 6),
+                },
+                "northEastCorner": {
+                    "latitude": round(s_ + (i1 + 1) * dlat, 6),
+                    "longitude": round(w_ + (j1 + 1) * dlon, 6),
+                },
+            }
+        )
     return rects
 
 
@@ -278,7 +342,10 @@ def pois_passed(coords, points, skip_ids):
 
 # ------------------------------------------------------------------ gọi API
 # Goong đứng sau Cloudflare: User-Agent mặc định "Python-urllib" bị chặn (lỗi 1010) → khai tên client riêng
-HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; COS40005-busroute/1.0)", "Accept": "application/json"}
+HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; COS40005-busroute/1.0)",
+    "Accept": "application/json",
+}
 
 
 def http_json(url, key, label, body=None):
@@ -287,21 +354,30 @@ def http_json(url, key, label, body=None):
         try:
             req = urllib.request.Request(url, headers=HTTP_HEADERS)
             if body is not None:
-                req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
-                                             headers={**HTTP_HEADERS, "Content-Type": "application/json"},
-                                             method="POST")
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(body).encode("utf-8"),
+                    headers={**HTTP_HEADERS, "Content-Type": "application/json"},
+                    method="POST",
+                )
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             body = e.read()[:200].decode("utf-8", "ignore").replace(key, "***")
             print(f"   HTTP {e.code} cho {label} (lần {attempt + 1}): {body}")
             if e.code in (400, 401, 403):
-                return None if e.code == 400 else sys.exit("Key sai, chưa bật dịch vụ hoặc hết hạn mức")
+                return (
+                    None
+                    if e.code == 400
+                    else sys.exit("Key sai, chưa bật dịch vụ hoặc hết hạn mức")
+                )
             if e.code == 429:
                 time.sleep(10)
         except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             # OSError gồm ConnectionResetError (WinError 10054), TimeoutError; HTTPException gồm RemoteDisconnected
-            print(f"   Lỗi mạng {label}: {type(e).__name__} {str(e).replace(key, '***')[:100]} (lần {attempt + 1})")
+            print(
+                f"   Lỗi mạng {label}: {type(e).__name__} {str(e).replace(key, '***')[:100]} (lần {attempt + 1})"
+            )
         time.sleep(2 * (attempt + 1))
     return None
 
@@ -317,12 +393,24 @@ def ring_avoid_rects():
     return _RING_RECTS
 
 
-def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None, depart=None):
+def call_tomtom(
+    key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None, depart=None
+):
     dims = BUS_DIMENSIONS if dims is None else dims
-    params = {"key": key, "travelMode": travel_mode, "traffic": "true", "routeType": "fastest",
-              "departAt": depart or depart_time(slot), "maxAlternatives": "3", **dims}
-    url = (f"https://api.tomtom.com/routing/1/calculateRoute/"
-           f"{a['lat']},{a['lon']}:{b['lat']},{b['lon']}/json?" + urllib.parse.urlencode(params))
+    params = {
+        "key": key,
+        "travelMode": travel_mode,
+        "traffic": "true",
+        "routeType": "fastest",
+        "departAt": depart or depart_time(slot),
+        "maxAlternatives": "3",
+        **dims,
+    }
+    url = (
+        f"https://api.tomtom.com/routing/1/calculateRoute/"
+        f"{a['lat']},{a['lon']}:{b['lat']},{b['lon']}/json?"
+        + urllib.parse.urlencode(params)
+    )
     # Trong giờ cấm: bảo TomTom tránh vành đai ngay khi tìm đường (POST + avoidAreas)
     if avoid_ring is None:
         avoid_ring = slot is not None and banned_in(slot)
@@ -330,23 +418,44 @@ def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None, 
     data = http_json(url, key, f"{a['id']}→{b['id']} {slot}", body)
     if data is None:
         return None
-    return [{"duration_s": r["summary"]["travelTimeInSeconds"],
-             "distance_m": r["summary"]["lengthInMeters"],
-             "traffic_delay_s": r["summary"].get("trafficDelayInSeconds", 0),
-             "points": [[round(p["latitude"], 5), round(p["longitude"], 5)]
-                        for leg in r["legs"] for p in leg["points"]]} for r in data.get("routes", [])]
+    return [
+        {
+            "duration_s": r["summary"]["travelTimeInSeconds"],
+            "distance_m": r["summary"]["lengthInMeters"],
+            "traffic_delay_s": r["summary"].get("trafficDelayInSeconds", 0),
+            "points": [
+                [round(p["latitude"], 5), round(p["longitude"], 5)]
+                for leg in r["legs"]
+                for p in leg["points"]
+            ],
+        }
+        for r in data.get("routes", [])
+    ]
 
 
 def call_goong(key, a, b, slot=None):
-    params = {"origin": f"{a['lat']},{a['lon']}", "destination": f"{b['lat']},{b['lon']}",
-              "vehicle": "truck", "alternatives": "true", "api_key": key}
-    data = http_json("https://rsapi.goong.io/Direction?" + urllib.parse.urlencode(params), key,
-                     f"{a['id']}→{b['id']}")
+    params = {
+        "origin": f"{a['lat']},{a['lon']}",
+        "destination": f"{b['lat']},{b['lon']}",
+        "vehicle": "truck",
+        "alternatives": "true",
+        "api_key": key,
+    }
+    data = http_json(
+        "https://rsapi.goong.io/Direction?" + urllib.parse.urlencode(params),
+        key,
+        f"{a['id']}→{b['id']}",
+    )
     if data is None:
         return None
-    return [{"duration_s": sum(l["duration"]["value"] for l in r["legs"]),
-             "distance_m": sum(l["distance"]["value"] for l in r["legs"]),
-             "points": decode_polyline(r["overview_polyline"]["points"])} for r in data.get("routes", [])]
+    return [
+        {
+            "duration_s": sum(l["duration"]["value"] for l in r["legs"]),
+            "distance_m": sum(l["distance"]["value"] for l in r["legs"]),
+            "points": decode_polyline(r["overview_polyline"]["points"]),
+        }
+        for r in data.get("routes", [])
+    ]
 
 
 CALLERS = {"tomtom": call_tomtom, "goong": call_goong}
@@ -355,7 +464,7 @@ CALLERS = {"tomtom": call_tomtom, "goong": call_goong}
 # Điểm chưa chốt toạ độ: cờ toạ độ trong reports/poi_audit.csv + điểm nhóm chưa quyết giữ/bỏ + mọi hub (chờ duyệt).
 # fetch lấy trước các cặp mà CẢ HAI điểm đã ổn → quota không phí vào điểm có thể bị đổi.
 COORD_FLAGS = {"on_bridge", "far_from_road", "far_from_major"}
-PENDING_IDS = set()                   # 03/11: nhóm chốt giữ Asia Park (P038) và Đỉnh Bàn Cờ (P049)
+PENDING_IDS = set()  # 03/11: nhóm chốt giữ Asia Park (P038) và Đỉnh Bàn Cờ (P049)
 
 
 def unstable_ids(points):
@@ -372,7 +481,9 @@ def raw_file(provider):
 def jobs(points, provider):
     # Danh sách việc cần gọi: (điểm đi, điểm đến, khung giờ hoặc None)
     slots = list(TIME_SLOTS) if PROVIDERS[provider]["per_slot"] else [None]
-    return [(a, b, s) for a in points for b in points if a["id"] != b["id"] for s in slots]
+    return [
+        (a, b, s) for a in points for b in points if a["id"] != b["id"] for s in slots
+    ]
 
 
 def test(args):
@@ -383,8 +494,8 @@ def test(args):
     a, b = pts["P001"], pts["P007"]
     ring = TIME_BANNED_AREAS[0]["polygon"]
     print(f"{a['name']} → {b['name']} ({args.provider})")
-    saved = []   # lưu toạ độ tuyến để vẽ kiểm tra (data/cache, không đưa lên git)
-    for slot in (TIME_SLOTS if cfg["per_slot"] else [None]):
+    saved = []  # lưu toạ độ tuyến để vẽ kiểm tra (data/cache, không đưa lên git)
+    for slot in TIME_SLOTS if cfg["per_slot"] else [None]:
         routes = CALLERS[args.provider](key, a, b, slot)
         saved += [{"slot": slot, "idx": i, **r} for i, r in enumerate(routes or [])]
         if not routes:
@@ -392,9 +503,11 @@ def test(args):
             continue
         for i, r in enumerate(routes):
             inside = ring_inside_m(densify([tuple(p) for p in r["points"]]), ring)
-            print(f"  {slot or 'mọi giờ':12} tuyến {i}: {r['duration_s'] / 60:5.1f} phút, "
-                  f"{r['distance_m'] / 1000:5.1f} km, trong vành đai {inside / 1000:4.1f} km "
-                  f"→ vào vành đai: {inside > RING_TOLERANCE_M}")
+            print(
+                f"  {slot or 'mọi giờ':12} tuyến {i}: {r['duration_s'] / 60:5.1f} phút, "
+                f"{r['distance_m'] / 1000:5.1f} km, trong vành đai {inside / 1000:4.1f} km "
+                f"→ vào vành đai: {inside > RING_TOLERANCE_M}"
+            )
         time.sleep(1 / cfg["rps"])
     out = RAW_DIR / f"{args.provider}_test_routes.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -409,10 +522,8 @@ def diag(args):
     loc = "16.06140,108.22763:16.00340,108.26300"
     tests = {
         "Routing API (bản cũ)": f"https://api.tomtom.com/routing/1/calculateRoute/{loc}/json?key={key}",
-        "Orbis Routing (apiVersion=2)":
-            f"https://api.tomtom.com/maps/orbis/routing/calculateRoute/{loc}/json?apiVersion=2&key={key}",
-        "Search API (kiểm tra key nói chung)":
-            f"https://api.tomtom.com/search/2/geocode/Da%20Nang.json?limit=1&key={key}",
+        "Orbis Routing (apiVersion=2)": f"https://api.tomtom.com/maps/orbis/routing/calculateRoute/{loc}/json?apiVersion=2&key={key}",
+        "Search API (kiểm tra key nói chung)": f"https://api.tomtom.com/search/2/geocode/Da%20Nang.json?limit=1&key={key}",
     }
     for name, url in tests.items():
         try:
@@ -438,7 +549,9 @@ def compare(args):
         "bus + tải trọng 16 tấn": ("bus", {**BUS_DIMENSIONS, "vehicleWeight": 16000}),
         "car": ("car", {}),
     }
-    print(f"{a['name']} → {b['name']}, khung giờ {args.slot} ({depart_time(args.slot)})")
+    print(
+        f"{a['name']} → {b['name']}, khung giờ {args.slot} ({depart_time(args.slot)})"
+    )
     for name, (mode, dims) in variants.items():
         routes = call_tomtom(key, a, b, args.slot, mode, dims)
         if not routes:
@@ -446,14 +559,17 @@ def compare(args):
             continue
         r = min(routes, key=lambda x: x["duration_s"])
         inside = ring_inside_m(densify([tuple(p) for p in r["points"]]), ring)
-        print(f"  {name:45} {r['duration_s'] / 60:5.1f} phút, {r['distance_m'] / 1000:5.1f} km, "
-              f"trong vành đai {inside / 1000:4.1f} km")
+        print(
+            f"  {name:45} {r['duration_s'] / 60:5.1f} phút, {r['distance_m'] / 1000:5.1f} km, "
+            f"trong vành đai {inside / 1000:4.1f} km"
+        )
         time.sleep(0.3)
 
 
 def validate(args):
     # So thời gian TomTom với chặng GPS thật (data/interim/gps_trips.csv, tạo bởi build_gps_trips.py)
     import pandas as pd
+
     trips_file = ROOT / "data" / "interim" / "gps_trips.csv"
     if not trips_file.exists():
         sys.exit("Chưa có gps_trips.csv – chạy python scripts/build_gps_trips.py trước")
@@ -474,23 +590,63 @@ def validate(args):
         time.sleep(1 / PROVIDERS["tomtom"]["rps"])
         if not routes:
             continue
-        ok = [r for r in routes if not (banned_in(t.slot) and
-                                        crosses_ring(densify([tuple(p) for p in r["points"]]), ring))]
+        ok = [
+            r
+            for r in routes
+            if not (
+                banned_in(t.slot)
+                and crosses_ring(densify([tuple(p) for p in r["points"]]), ring)
+            )
+        ]
         best = min(ok or routes, key=lambda r: r["duration_s"])
         tt_min = best["duration_s"] / 60
-        rows.append({"slot": t.slot, "depart": t.depart, "gps_minutes": t.gps_minutes,
-                     "tomtom_minutes": round(tt_min, 1), "gps_km": t.gps_path_km,
-                     "tomtom_km": round(best["distance_m"] / 1000, 1),
-                     "ratio_gps_over_tomtom": round(t.gps_minutes / tt_min, 2),
-                     "ape": round(abs(tt_min - t.gps_minutes) / t.gps_minutes, 3)})
+        rows.append(
+            {
+                "slot": t.slot,
+                "depart": t.depart,
+                "gps_minutes": t.gps_minutes,
+                "tomtom_minutes": round(tt_min, 1),
+                "gps_km": t.gps_path_km,
+                "tomtom_km": round(best["distance_m"] / 1000, 1),
+                "ratio_gps_over_tomtom": round(t.gps_minutes / tt_min, 2),
+                "ape": round(abs(tt_min - t.gps_minutes) / t.gps_minutes, 3),
+            }
+        )
     res = pd.DataFrame(rows)
-    res.to_csv(ROOT / "data" / "interim" / "gps_vs_tomtom.csv", index=False, encoding="utf-8-sig")
+    res.to_csv(
+        ROOT / "data" / "interim" / "gps_vs_tomtom.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
     # Bảng tổng hợp (không có toạ độ) → reports/ để commit và đưa vào báo cáo
-    summary = res.groupby("slot").agg(n=("ape", "size"), mape=("ape", "mean"),
-                                      median_ratio=("ratio_gps_over_tomtom", "median")).round(3)
-    summary.loc["ALL"] = [len(res), round(res.ape.mean(), 3), round(res.ratio_gps_over_tomtom.median(), 2)]
+    summary = (
+        res.groupby("slot")
+        .agg(
+            n=("ape", "size"),
+            mape=("ape", "mean"),
+            median_ratio=("ratio_gps_over_tomtom", "median"),
+        )
+        .round(3)
+    )
+    summary.loc["ALL"] = [
+        len(res),
+        round(res.ape.mean(), 3),
+        round(res.ratio_gps_over_tomtom.median(), 2),
+    ]
     summary.to_csv(ROOT / "reports" / "gps_validation.csv", encoding="utf-8-sig")
-    print(res[["slot", "depart", "gps_minutes", "tomtom_minutes", "gps_km", "tomtom_km", "ape"]].to_string(index=False))
+    print(
+        res[
+            [
+                "slot",
+                "depart",
+                "gps_minutes",
+                "tomtom_minutes",
+                "gps_km",
+                "tomtom_km",
+                "ape",
+            ]
+        ].to_string(index=False)
+    )
     print("\nTổng hợp (mape = sai số % trung bình; median_ratio = GPS ÷ TomTom):")
     print(summary.to_string())
 
@@ -503,7 +659,9 @@ def fetch(args):
     done = set()
     if path.exists():
         with open(path, encoding="utf-8") as f:
-            done = {(r["from_id"], r["to_id"], r.get("slot")) for r in map(json.loads, f)}
+            done = {
+                (r["from_id"], r["to_id"], r.get("slot")) for r in map(json.loads, f)
+            }
     todo = [j for j in todo_all if (j[0]["id"], j[1]["id"], j[2]) not in done]
     bad = unstable_ids(points)
     # Ưu tiên cặp mà cả hai điểm đã chốt toạ độ
@@ -511,13 +669,19 @@ def fetch(args):
     n_stable = sum(1 for j in todo if j[0]["id"] not in bad and j[1]["id"] not in bad)
     if args.stable_only:
         todo = todo[:n_stable]
-    print(f"Điểm chưa chốt ({len(bad)}): {', '.join(sorted(bad))} → còn {n_stable} request cho cặp đã chốt")
+    print(
+        f"Điểm chưa chốt ({len(bad)}): {', '.join(sorted(bad))} → còn {n_stable} request cho cặp đã chốt"
+    )
     limit = args.limit or cfg["daily"]
     batch = todo[:limit]
-    print(f"{len(points)} điểm → {len(todo_all)} request tổng; đã có {len(done)}; còn {len(todo)}; "
-          f"lần này gọi {len(batch)} (~{len(batch) / cfg['rps'] / 60:.1f} phút)")
+    print(
+        f"{len(points)} điểm → {len(todo_all)} request tổng; đã có {len(done)}; còn {len(todo)}; "
+        f"lần này gọi {len(batch)} (~{len(batch) / cfg['rps'] / 60:.1f} phút)"
+    )
     if len(todo) > len(batch):
-        print(f"→ Cần chạy thêm khoảng {math.ceil((len(todo) - len(batch)) / cfg['daily'])} ngày nữa")
+        print(
+            f"→ Cần chạy thêm khoảng {math.ceil((len(todo) - len(batch)) / cfg['daily'])} ngày nữa"
+        )
     if args.dry_run or not batch:
         return
     key = read_api_key(cfg["key"])
@@ -526,6 +690,7 @@ def fetch(args):
     # Chỉ luồng chính ghi file → không lo ghi chồng dòng.
     import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     lock, next_slot = threading.Lock(), [time.monotonic()]
 
     def throttled_call(job):
@@ -538,18 +703,33 @@ def fetch(args):
         return job, CALLERS[args.provider](key, a, b, slot)
 
     t0, n_ok = time.monotonic(), 0
-    with open(path, "a", encoding="utf-8") as f, ThreadPoolExecutor(max_workers=args.workers) as pool:
+    with (
+        open(path, "a", encoding="utf-8") as f,
+        ThreadPoolExecutor(max_workers=args.workers) as pool,
+    ):
         futures = [pool.submit(throttled_call, j) for j in batch]
         for i, fut in enumerate(as_completed(futures), 1):
             (a, b, slot), routes = fut.result()
             if routes is not None:
-                f.write(json.dumps({"from_id": a["id"], "to_id": b["id"], "slot": slot, "routes": routes},
-                                   ensure_ascii=False) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "from_id": a["id"],
+                            "to_id": b["id"],
+                            "slot": slot,
+                            "routes": routes,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
                 f.flush()
                 n_ok += 1
             if i % 50 == 0:
                 rate = i / (time.monotonic() - t0)
-                print(f"  {i}/{len(batch)} ({rate:.1f} request/s, còn ~{(len(batch) - i) / rate / 60:.0f} phút)")
+                print(
+                    f"  {i}/{len(batch)} ({rate:.1f} request/s, còn ~{(len(batch) - i) / rate / 60:.0f} phút)"
+                )
     print(f"Đã lưu {path} (+{n_ok} bản ghi)")
 
 
@@ -578,10 +758,16 @@ class FastGeo:
 
     def __init__(self, polygon, corridor_segs, pois):
         import numpy as np
+
         self.np = np
-        self.poly = np.array(polygon)                       # (V, 2) lat, lon
+        self.poly = np.array(polygon)  # (V, 2) lat, lon
         self.pa, self.pb = self.poly, np.roll(self.poly, -1, axis=0)
-        self.bbox = (self.poly[:, 0].min(), self.poly[:, 0].max(), self.poly[:, 1].min(), self.poly[:, 1].max())
+        self.bbox = (
+            self.poly[:, 0].min(),
+            self.poly[:, 0].max(),
+            self.poly[:, 1].min(),
+            self.poly[:, 1].max(),
+        )
         segs = np.array(corridor_segs) if corridor_segs else np.zeros((0, 2, 2))
         self.ca, self.cb = segs[:, 0], segs[:, 1]
         self.poi_ids = [q["id"] for q in pois]
@@ -640,8 +826,14 @@ class FastGeo:
         cum = np.concatenate([[0.0], np.cumsum(seg)])
         total = cum[-1]
         s0, s1, w0, w1 = self.bbox
-        cand = np.where((cum >= RING_END_SKIP_M) & (cum <= total - RING_END_SKIP_M)
-                        & (c[:, 0] >= s0) & (c[:, 0] <= s1) & (c[:, 1] >= w0) & (c[:, 1] <= w1))[0]
+        cand = np.where(
+            (cum >= RING_END_SKIP_M)
+            & (cum <= total - RING_END_SKIP_M)
+            & (c[:, 0] >= s0)
+            & (c[:, 0] <= s1)
+            & (c[:, 1] >= w0)
+            & (c[:, 1] <= w1)
+        )[0]
         cand = cand[cand >= 1]
         if len(cand) == 0:
             return 0.0
@@ -649,8 +841,9 @@ class FastGeo:
         keep = self.in_polygon(pts)
         if keep.any():
             sub = pts[keep]
-            ok = (self.dist_to_segs(sub, self.pa, self.pb) > RING_EDGE_BAND_M) & \
-                 (self.dist_to_segs(sub, self.ca, self.cb) > CORRIDOR_BAND_M)
+            ok = (self.dist_to_segs(sub, self.pa, self.pb) > RING_EDGE_BAND_M) & (
+                self.dist_to_segs(sub, self.ca, self.cb) > CORRIDOR_BAND_M
+            )
             keep[np.where(keep)[0]] = ok
         return float(seg[cand[keep] - 1].sum())
 
@@ -661,7 +854,9 @@ class FastGeo:
         dx = (self.poi_xy[:, None, 1] - sub[None, :, 1]) * kx[None, :]
         dy = (self.poi_xy[:, None, 0] - sub[None, :, 0]) * 110540
         near = (np.hypot(dx, dy) <= PASS_RADIUS_M).any(axis=1)
-        return [pid for pid, hit in zip(self.poi_ids, near) if hit and pid not in skip_ids]
+        return [
+            pid for pid, hit in zip(self.poi_ids, near) if hit and pid not in skip_ids
+        ]
 
 
 def endpoint_banned_ids(points):
@@ -671,8 +866,11 @@ def endpoint_banned_ids(points):
     out = set()
     for q in points:
         loc = (q["lat"], q["lon"])
-        if (point_in_polygon(*loc, ring) and dist_to_polygon_edge_m(loc, ring) > ENDPOINT_EDGE_OK_M
-                and dist_to_segments_m(loc, segs) > ENDPOINT_CORRIDOR_OK_M):
+        if (
+            point_in_polygon(*loc, ring)
+            and dist_to_polygon_edge_m(loc, ring) > ENDPOINT_EDGE_OK_M
+            and dist_to_segments_m(loc, segs) > ENDPOINT_CORRIDOR_OK_M
+        ):
             out.add(q["id"])
     return out
 
@@ -681,36 +879,66 @@ def build(args):
     # Đọc file thô TỪNG DÒNG (file TomTom ~430 MB, không nạp hết vào RAM); mỗi dòng = 1 cặp × 1 khung giờ
     # (Goong: 1 dòng dùng cho cả 5 khung giờ)
     points = {p["id"]: p for p in load_points()}
-    geo = FastGeo(TIME_BANNED_AREAS[0]["polygon"], corridor_segments(),
-                  [q for q in points.values() if q["type"] == "poi"])
+    geo = FastGeo(
+        TIME_BANNED_AREAS[0]["polygon"],
+        corridor_segments(),
+        [q for q in points.values() if q["type"] == "poi"],
+    )
     per_slot = PROVIDERS[args.provider]["per_slot"]
     deep = endpoint_banned_ids(list(points.values()))
-    print(f"Điểm nằm sâu trong vành đai (giờ cấm không đi/tới được): {', '.join(sorted(deep))}")
+    print(
+        f"Điểm nằm sâu trong vành đai (giờ cấm không đi/tới được): {', '.join(sorted(deep))}"
+    )
     k = load_calibration() if not per_slot else {}
-    scale = getattr(args, "scale", 1.0)   # TomTom: nhân hệ số GPS/TomTom (validate 03/11: 0.82 trên tuyến trùng)
-    fields = ["from_id", "to_id", "from_type", "to_type", "from_lat", "from_lon", "to_lat", "to_lon",
-              "to_poi_score", "slot", "duration_s", "distance_m", "feasible", "pois_passed", "through_ring"]
+    scale = getattr(
+        args, "scale", 1.0
+    )  # TomTom: nhân hệ số GPS/TomTom (validate 03/11: 0.82 trên tuyến trùng)
+    fields = [
+        "from_id",
+        "to_id",
+        "from_type",
+        "to_type",
+        "from_lat",
+        "from_lon",
+        "to_lat",
+        "to_lon",
+        "to_poi_score",
+        "slot",
+        "duration_s",
+        "distance_m",
+        "feasible",
+        "pois_passed",
+        "through_ring",
+    ]
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUT_FILE.with_suffix(".tmp")
     t0, n_rows, n_infeasible, seen = time.monotonic(), 0, 0, set()
-    with open(raw_file(args.provider), encoding="utf-8") as fin, \
-            open(tmp, "w", newline="", encoding="utf-8-sig") as fout:
+    with (
+        open(raw_file(args.provider), encoding="utf-8") as fin,
+        open(tmp, "w", newline="", encoding="utf-8-sig") as fout,
+    ):
         w = csv.DictWriter(fout, fieldnames=fields)
         w.writeheader()
         for line_no, line in enumerate(fin, 1):
             r = json.loads(line)
             a, b = points.get(r["from_id"]), points.get(r["to_id"])
             if a is None or b is None:
-                continue                               # điểm đã bị bỏ khỏi danh sách
+                continue  # điểm đã bị bỏ khỏi danh sách
             routes = []
             for rt in r["routes"]:
                 c = geo.densify(rt["points"])
-                routes.append({**rt, "coords": c, "in_ring": geo.ring_inside_m(c) > RING_TOLERANCE_M})
+                routes.append(
+                    {
+                        **rt,
+                        "coords": c,
+                        "in_ring": geo.ring_inside_m(c) > RING_TOLERANCE_M,
+                    }
+                )
             routes.sort(key=lambda x: x["duration_s"])
-            for slot in ([r["slot"]] if per_slot else list(TIME_SLOTS)):
+            for slot in [r["slot"]] if per_slot else list(TIME_SLOTS):
                 key = (a["id"], b["id"], slot)
                 if key in seen:
-                    continue                           # bản ghi trùng (chạy lại) → giữ bản đầu
+                    continue  # bản ghi trùng (chạy lại) → giữ bản đầu
                 seen.add(key)
                 if banned_in(slot) and (a["id"] in deep or b["id"] in deep):
                     ok = []
@@ -719,23 +947,38 @@ def build(args):
                 best = ok[0] if ok else None
                 n_infeasible += best is None
                 mult = k.get(slot, 1.0) if not per_slot else scale
-                w.writerow({
-                    "from_id": a["id"], "to_id": b["id"], "from_type": a["type"], "to_type": b["type"],
-                    "from_lat": a["lat"], "from_lon": a["lon"], "to_lat": b["lat"], "to_lon": b["lon"],
-                    "to_poi_score": b["score"], "slot": slot,
-                    "duration_s": round(best["duration_s"] * mult) if best else 0,
-                    "distance_m": best["distance_m"] if best else 0,
-                    "feasible": int(best is not None),
-                    "pois_passed": ";".join(geo.pois_passed(best["coords"], {a["id"], b["id"]})) if best else "",
-                    "through_ring": int(best["in_ring"]) if best else 0,
-                })
+                w.writerow(
+                    {
+                        "from_id": a["id"],
+                        "to_id": b["id"],
+                        "from_type": a["type"],
+                        "to_type": b["type"],
+                        "from_lat": a["lat"],
+                        "from_lon": a["lon"],
+                        "to_lat": b["lat"],
+                        "to_lon": b["lon"],
+                        "to_poi_score": b["score"],
+                        "slot": slot,
+                        "duration_s": round(best["duration_s"] * mult) if best else 0,
+                        "distance_m": best["distance_m"] if best else 0,
+                        "feasible": int(best is not None),
+                        "pois_passed": ";".join(
+                            geo.pois_passed(best["coords"], {a["id"], b["id"]})
+                        )
+                        if best
+                        else "",
+                        "through_ring": int(best["in_ring"]) if best else 0,
+                    }
+                )
                 n_rows += 1
             if line_no % 1000 == 0:
                 rate = line_no / (time.monotonic() - t0)
                 print(f"  {line_no} dòng thô ({rate:.0f} dòng/s)")
     tmp.replace(OUT_FILE)
-    print(f"Đã ghi {OUT_FILE}: {n_rows} dòng, {n_infeasible} dòng không có tuyến hợp lệ "
-          f"({time.monotonic() - t0:.0f}s, scale={scale})")
+    print(
+        f"Đã ghi {OUT_FILE}: {n_rows} dòng, {n_infeasible} dòng không có tuyến hợp lệ "
+        f"({time.monotonic() - t0:.0f}s, scale={scale})"
+    )
 
 
 if __name__ == "__main__":
@@ -749,13 +992,29 @@ if __name__ == "__main__":
             sp.add_argument("--dst", default="P007")
         sp.add_argument("--provider", choices=list(PROVIDERS), default="tomtom")
         if name == "build":
-            sp.add_argument("--scale", type=float, default=1.0,
-                            help="nhân duration TomTom (đề xuất 0.82 từ validate, chờ nhóm duyệt)")
+            sp.add_argument(
+                "--scale",
+                type=float,
+                default=1.0,
+                help="nhân duration TomTom (đề xuất 0.82 từ validate, chờ nhóm duyệt)",
+            )
         if name == "fetch":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
-            sp.add_argument("--workers", type=int, default=4, help="số request gọi song song")
-            sp.add_argument("--stable-only", action="store_true",
-                            help="chỉ lấy cặp mà cả hai điểm đã chốt toạ độ")
+            sp.add_argument(
+                "--workers", type=int, default=4, help="số request gọi song song"
+            )
+            sp.add_argument(
+                "--stable-only",
+                action="store_true",
+                help="chỉ lấy cặp mà cả hai điểm đã chốt toạ độ",
+            )
     args = ap.parse_args()
-    {"diag": diag, "test": test, "compare": compare, "validate": validate, "fetch": fetch, "build": build}[args.cmd](args)
+    {
+        "diag": diag,
+        "test": test,
+        "compare": compare,
+        "validate": validate,
+        "fetch": fetch,
+        "build": build,
+    }[args.cmd](args)

@@ -1,5 +1,7 @@
 """Khung giờ trong ngày. Ranh giới khớp với giờ cấm vành đai trung tâm."""
 
+from collections.abc import Iterable
+
 # slot_name: (bắt đầu, kết thúc)
 TIME_SLOTS = {
     "morning": ("05:00", "10:30"),
@@ -10,19 +12,19 @@ TIME_SLOTS = {
 }
 
 
-def to_minutes(hhmm):
-    # "10:30" → 630
+def to_minutes(hhmm: str) -> int:
+    """Convert an HH:MM string to minutes after midnight."""
     h, m = map(int, hhmm.split(":"))
     return h * 60 + m
 
 
-def in_windows(minute_of_day, windows):
-    # True nếu thời điểm nằm trong một trong các khung [start, end)
+def in_windows(minute_of_day: int, windows: Iterable[tuple[str, str]]) -> bool:
+    """Check membership in any half-open [start, end) window in HH:MM."""
     return any(to_minutes(s) <= minute_of_day < to_minutes(e) for s, e in windows)
 
 
-def slot_of(minute_of_day):
-    # Trả về tên khung giờ chứa thời điểm; ngoài mọi khung → "night"
+def slot_of(minute_of_day: int) -> str:
+    """Return the containing time slot, or night when no slot contains it."""
     for name, (s, e) in TIME_SLOTS.items():
         if to_minutes(s) <= minute_of_day < to_minutes(e):
             return name

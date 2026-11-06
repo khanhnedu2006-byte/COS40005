@@ -6,6 +6,15 @@ build-backend = "setuptools.build_meta"
 name = "cos40005"
 version = "0.1.0"
 requires-python = ">=3.10"
+dependencies = [
+    "fastparquet>=2026.9.0",
+    "networkx>=3.4.2",
+    "pandas>=2.3.3",
+    "polars>=2.0.0",
+    "pyarrow>=25.0.1",
+    "pytest>=9.2.0",
+    "scikit-learn-intelex>=2026.2.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

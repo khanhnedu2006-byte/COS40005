@@ -11,6 +11,7 @@ src/busroute/gps/clean.py
 src/busroute/gps/map_match.py
 src/busroute/gps/speed_calibration.py
 src/busroute/graph/__init__.py
+src/busroute/graph/base_tables.py
 src/busroute/graph/connectivity.py
 src/busroute/graph/export.py
 src/busroute/graph/osm_fetch.py
@@ -22,6 +23,8 @@ src/busroute/routing/baselines.py
 src/busroute/routing/env.py
 src/busroute/routing/evaluate.py
 src/busroute/routing/gnn.py
+src/busroute/routing/metaheuristics.py
+src/busroute/routing/orienteering.py
 src/busroute/routing/ppo_train.py
 src/busroute/utils/__init__.py
 src/busroute/utils/geo.py
@@ -31,8 +34,12 @@ src/busroute/viz/route_map.py
 src/cos40005.egg-info/PKG-INFO
 src/cos40005.egg-info/SOURCES.txt
 src/cos40005.egg-info/dependency_links.txt
+src/cos40005.egg-info/requires.txt
 src/cos40005.egg-info/top_level.txt
 src/driverface/__init__.py
 src/driverface/features.py
 tests/test_geo.py
+tests/test_orienteering.py
+tests/test_polygon.py
 tests/test_restrictions.py
+tests/test_stage1.py

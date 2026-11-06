@@ -1,18 +1,21 @@
 """Môi trường RL: xe đi từ A tới B, chọn cạnh tiếp theo, tối đa điểm POI trong ngân sách thời gian."""
+
 import numpy as np
 
 from busroute.utils.timeslots import slot_of
 
-POI_PASS_RADIUS = 0          # TODO: cho phép tính POI khi đi qua node lân cận (theo pass_road)
+POI_PASS_RADIUS = 0  # TODO: cho phép tính POI khi đi qua node lân cận (theo pass_road)
 TIME_PENALTY_PER_MIN = 0.01  # phạt nhỏ theo thời gian để tránh đi vòng vô ích
-ARRIVAL_BONUS = 10.0         # thưởng khi tới B trong ngân sách
-FAIL_PENALTY = -20.0         # phạt khi hết giờ hoặc kẹt
+ARRIVAL_BONUS = 10.0  # thưởng khi tới B trong ngân sách
+FAIL_PENALTY = -20.0  # phạt khi hết giờ hoặc kẹt
 
 
 class TourRouteEnv:
     """State: node hiện tại, thời gian đã đi, giờ trong ngày, POI đã ghé. Action: chỉ số cạnh đi ra."""
 
-    def __init__(self, nodes, edges, start_node, end_node, budget_min, start_minute, max_degree=8):
+    def __init__(
+        self, nodes, edges, start_node, end_node, budget_min, start_minute, max_degree=8
+    ):
         self.nodes, self.edges = nodes, edges
         self.start, self.end = start_node, end_node
         self.budget_s, self.start_minute = budget_min * 60, start_minute
@@ -22,26 +25,46 @@ class TourRouteEnv:
         self.poi_score = dict(zip(nodes.node_idx, nodes.poi_score.fillna(0)))
         self.reset()
 
-    def reset(self):
+    def reset(self) -> dict[str, object]:
+        """Start a new episode and return the observation at the start node."""
         self.current, self.elapsed_s = self.start, 0.0
         self.visited_pois, self.path = set(), [self.start]
         return self._obs()
 
-    def minute_of_day(self):
+    def minute_of_day(self) -> int:
+        """Return the simulated local minute, wrapping at midnight."""
         return int(self.start_minute + self.elapsed_s // 60) % (24 * 60)
 
-    def candidate_edges(self):
+    def candidate_edges(self) -> list:
+        """Return up to max_degree outgoing edge row labels for the current node."""
         return list(self.out_edges.get(self.current, []))[: self.max_degree]
 
-    def action_mask(self):
-        # Che cạnh bị cấm ở khung giờ hiện tại (đã lọc whitelist từ trước)
+    def action_mask(self) -> np.ndarray:
+        """Mark available outgoing actions that are not blocked in the current slot."""
         slot = slot_of(self.minute_of_day())
         mask = np.zeros(self.max_degree, dtype=bool)
         for i, e in enumerate(self.candidate_edges()):
             mask[i] = not bool(self.edges.at[e, f"blocked_{slot}"])
         return mask
 
-    def step(self, action):
+    def step(
+        self, action: int
+    ) -> tuple[dict[str, object], float, bool, dict[str, float]]:
+        """Traverse a permitted edge and return observation, reward, done, and info.
+
+        POI scores are awarded once; arrival ends the episode before checking
+        whether the time budget was exceeded.
+
+        Args:
+            action: Index into the current candidate edge list.
+
+        Returns:
+            A tuple of observation, reward, done flag, and an info mapping
+            containing elapsed minutes.
+
+        Raises:
+            AssertionError: If the selected action is masked.
+        """
         cands = self.candidate_edges()
         assert self.action_mask()[action], "Agent chọn cạnh bị che"
         e = cands[action]
@@ -51,8 +74,11 @@ class TourRouteEnv:
         self.current = int(self.edges.at[e, "to_idx"])
         self.path.append(self.current)
         reward = -TIME_PENALTY_PER_MIN * dt / 60
-        if self.poi_score.get(self.current, 0) and self.current not in self.visited_pois:
-            reward += self.poi_score[self.current]       # mỗi POI chỉ tính 1 lần
+        if (
+            self.poi_score.get(self.current, 0)
+            and self.current not in self.visited_pois
+        ):
+            reward += self.poi_score[self.current]  # mỗi POI chỉ tính 1 lần
             self.visited_pois.add(self.current)
         done = False
         if self.current == self.end:
@@ -63,7 +89,8 @@ class TourRouteEnv:
             done = True
         return self._obs(), reward, done, {"elapsed_min": self.elapsed_s / 60}
 
-    def _obs(self):
+    def _obs(self) -> dict[str, object]:
+        """Build the current observation, including the current action mask."""
         return {
             "current": self.current,
             "time_left_ratio": max(0.0, 1 - self.elapsed_s / self.budget_s),

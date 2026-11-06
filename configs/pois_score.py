@@ -20,19 +20,25 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from pois import POIS
 
 # ---------------------------------------------------------------- settings
-HEADLESS = False          # keep False for the first run so you can see what happens
-LIMIT = None              # e.g. 3 to test on the first 3 POIs, None for all
+HEADLESS = False  # keep False for the first run so you can see what happens
+LIMIT = None  # e.g. 3 to test on the first 3 POIs, None for all
 BASE_DIR = Path(__file__).resolve().parent  # files are read/written next to this script
 CACHE_FILE = BASE_DIR / "metrics_cache.json"
 OUTPUT_CSV = BASE_DIR / "ranked_pois.csv"
 CITY_SUFFIX = "Đà Nẵng"
 # Hand-entered values, used instead of scraping (keyed by poi_id)
 MANUAL_OVERRIDES = {
-    1: {"rating": 4.5, "review_count": 9905},    # Cầu Rồng
+    1: {"rating": 4.5, "review_count": 9905},  # Cầu Rồng
     46: {"rating": 4.1, "review_count": 10140},  # GO! Đà Nẵng
     # Tra tay ngày 2026-11-03 – scraper đọc nhầm trang kết quả / nhầm địa điểm
-    21: {"rating": 4.3, "review_count": 72},     # Di tích Thành Điện Hải (Google: tạm thời đóng cửa)
-    38: {"rating": 4.4, "review_count": 11912},  # Asia Park, nay tên "DA NANG DOWNTOWN" (Google: đóng vĩnh viễn)
+    21: {
+        "rating": 4.3,
+        "review_count": 72,
+    },  # Di tích Thành Điện Hải (Google: tạm thời đóng cửa)
+    38: {
+        "rating": 4.4,
+        "review_count": 11912,
+    },  # Asia Park, nay tên "DA NANG DOWNTOWN" (Google: đóng vĩnh viễn)
 }
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -205,25 +211,34 @@ def calculate_bayesian_scores(pois_list):
 # ---------------------------------------------------------------- export
 def export_to_csv(pois_list, filename=OUTPUT_CSV):
     fieldnames = [
-        "poi_id", "name", "matched_name", "category",
-        "latitude", "longitude", "rating", "review_count", "score",
+        "poi_id",
+        "name",
+        "matched_name",
+        "category",
+        "latitude",
+        "longitude",
+        "rating",
+        "review_count",
+        "score",
     ]
     with open(filename, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for poi in pois_list:
             lat, lng = poi.get("coordinates", [None, None])
-            writer.writerow({
-                "poi_id": poi.get("poi_id"),
-                "name": poi.get("name"),
-                "matched_name": poi.get("matched_name", ""),
-                "category": poi.get("category"),
-                "latitude": lat,
-                "longitude": lng,
-                "rating": poi.get("rating", 0.0),
-                "review_count": poi.get("review_count", 0),
-                "score": poi.get("score", 0.0),
-            })
+            writer.writerow(
+                {
+                    "poi_id": poi.get("poi_id"),
+                    "name": poi.get("name"),
+                    "matched_name": poi.get("matched_name", ""),
+                    "category": poi.get("category"),
+                    "latitude": lat,
+                    "longitude": lng,
+                    "rating": poi.get("rating", 0.0),
+                    "review_count": poi.get("review_count", 0),
+                    "score": poi.get("score", 0.0),
+                }
+            )
     print(f"Exported {len(pois_list)} POIs to '{filename}'")
 
 

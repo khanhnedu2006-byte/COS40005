@@ -1,4 +1,5 @@
 """Vòng huấn luyện PPO. Khung – nhóm hoàn thiện phần TODO."""
+
 import torch
 
 
@@ -13,14 +14,31 @@ def compute_gae(rewards, values, dones, gamma=0.99, lam=0.95):
     return adv, adv + values
 
 
-def ppo_loss(new_logp, old_logp, adv, returns, values, entropy, clip_eps=0.2, vf_coef=0.5, ent_coef=0.01):
+def ppo_loss(
+    new_logp,
+    old_logp,
+    adv,
+    returns,
+    values,
+    entropy,
+    clip_eps=0.2,
+    vf_coef=0.5,
+    ent_coef=0.01,
+):
     ratio = torch.exp(new_logp - old_logp)
-    policy_loss = -torch.min(ratio * adv, torch.clamp(ratio, 1 - clip_eps, 1 + clip_eps) * adv).mean()
+    policy_loss = -torch.min(
+        ratio * adv, torch.clamp(ratio, 1 - clip_eps, 1 + clip_eps) * adv
+    ).mean()
     value_loss = (returns - values).pow(2).mean()
     return policy_loss + vf_coef * value_loss - ent_coef * entropy.mean()
 
 
 def train(env_factory, encoder, head, cfg):
+    """Placeholder for the PPO training loop.
+
+    Raises:
+        NotImplementedError: Always; episode collection and training are TODO.
+    """
     # TODO:
     # 1. Mỗi vòng: sinh nhiều episode với (A, B, ngân sách, giờ xuất phát) ngẫu nhiên
     # 2. Lưu (obs, action, logp, reward, value, done)

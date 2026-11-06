@@ -1,11 +1,19 @@
 """Tính tốc độ thực tế theo (đoạn đường, khung giờ) và hệ số hiệu chỉnh so với giới hạn luật."""
+
 from collections import defaultdict
 
 from busroute.utils.timeslots import slot_of
 
 
 def collect_edge_speeds(matched_df):
-    # {(u, v, key, slot): [tốc độ km/h, ...]}
+    """Group matched GPS speeds by directed edge and time slot.
+
+    Args:
+        matched_df: Matched points with time, u, v, key and gps_speed_kmh.
+
+    Returns:
+        A mapping from (u, v, key, slot) to observed speeds in km/h.
+    """
     samples = defaultdict(list)
     for row in matched_df.itertuples():
         minute = row.time.hour * 60 + row.time.minute
@@ -14,7 +22,17 @@ def collect_edge_speeds(matched_df):
 
 
 def fit_calibration(samples, edge_limit_kmh, edge_limit_class):
-    # Hệ số = trung vị (tốc độ thực / giới hạn luật), nhóm theo (limit_class, slot)
+    """Estimate speed-to-limit ratios by road class and time slot.
+
+    Args:
+        samples: Speed lists keyed by (u, v, key, slot).
+        edge_limit_kmh: Legal speed limits keyed by (u, v, key).
+        edge_limit_class: Limit class names keyed by (u, v, key).
+
+    Returns:
+        Ratios keyed by (limit class, slot). For an even number of samples,
+        the upper middle sorted ratio is used.
+    """
     ratios = defaultdict(list)
     for (u, v, k, slot), speeds in samples.items():
         limit = edge_limit_kmh[(u, v, k)]

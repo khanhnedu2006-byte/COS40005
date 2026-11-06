@@ -15,7 +15,8 @@ def test_merged_names_after_simplify():
 
 def test_time_ban(monkeypatch):
     square = [(16.0, 108.0), (16.0, 108.3), (16.1, 108.3), (16.1, 108.0)]
-    monkeypatch.setattr(r, "TIME_BANNED_AREAS",
-                        [{"polygon": square, "windows": [("10:30", "12:00")]}])
+    monkeypatch.setattr(
+        r, "TIME_BANNED_AREAS", [{"polygon": square, "windows": [("10:30", "12:00")]}]
+    )
     assert r.is_time_banned(16.05, 108.2, 11 * 60)
     assert not r.is_time_banned(16.05, 108.2, 9 * 60)

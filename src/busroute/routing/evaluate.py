@@ -1,13 +1,26 @@
 """Chỉ số đánh giá một lộ trình."""
 
 
-def route_metrics(G, route, budget_s, weight="travel_time_morning"):
+def route_metrics(G, route, budget_s: float, weight: str = "travel_time_morning") -> dict:
+    """Summarize travel time, unique POI scores, and unverified route edges.
+
+    Args:
+        G: Directed multigraph with weighted edges and optional POI attributes.
+        route: Ordered node IDs; consecutive nodes must have connecting edges.
+        budget_s: Travel-time budget in seconds.
+        weight: Edge attribute containing travel time in seconds.
+
+    Returns:
+        A mapping with total minutes, budget status, POI count and score, and
+        node pairs whose selected edges lack GPS verification. For parallel
+        edges the lowest-weight edge is used. The starting node is not scored.
+    """
     total_t, score, seen, unverified = 0.0, 0.0, set(), []
     for u, v in zip(route[:-1], route[1:]):
         data = min(G[u][v].values(), key=lambda d: d[weight])
         total_t += data[weight]
         if not data.get("verified_by_gps"):
-            unverified.append((u, v))          # danh sách cần kiểm tra Street View / tài xế
+            unverified.append((u, v))  # danh sách cần kiểm tra Street View / tài xế
         if G.nodes[v].get("is_poi") and v not in seen:
             seen.add(v)
             score += G.nodes[v].get("poi_score") or 0

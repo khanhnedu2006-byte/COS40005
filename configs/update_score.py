@@ -61,7 +61,9 @@ def main():
     with open(POIS_FILE, "w", encoding="utf-8") as f:
         f.write(format_pois(POIS))
 
-    print(f"Updated {updated}/{len(POIS)} POIs in {POIS_FILE} (backup: {POIS_FILE}.bak)")
+    print(
+        f"Updated {updated}/{len(POIS)} POIs in {POIS_FILE} (backup: {POIS_FILE}.bak)"
+    )
     if missing:
         print("Not found in CSV:", ", ".join(map(str, missing)))
 
