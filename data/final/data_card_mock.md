@@ -10,7 +10,7 @@
 ## Thời gian theo khung giờ (phút, các cặp feasible)
 
 | slot | n | trung vị | p90 | km/h trung vị |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | morning | 2970 | 21.2 | 76.2 | 25.0 |
 | ban_noon | 1482 | 36.9 | 90.7 | 22.0 |
 | afternoon | 2970 | 22.1 | 79.3 | 24.0 |
