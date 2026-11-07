@@ -39,10 +39,15 @@ installing the package:
 ```bash
 python scripts/solve_orienteering.py --algorithm alns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
 python scripts/solve_orienteering.py --algorithm vns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
+python scripts/solve_orienteering.py --algorithm ppo --checkpoint checkpoints/ppo.zip --start H01 --end H02 --departure 08:00 --budget-min 240
 ```
 
 Use `--matrix data/final/od_matrix_mock.csv` for a mock-data smoke test. Output is
-JSON with the selected stops, total score, travel minutes and collected POI IDs.
+JSON with `route`, `score`, `duration_s` and `collected` for all three solvers.
+PPO requires a checkpoint trained on the same matrix; `--iterations` and `--seed`
+configure ALNS and VNS, while PPO uses its trained policy for inference.
+This replaces the older CLI fields `algorithm`, `travel_minutes` and `collected_pois`;
+divide `duration_s` by 60 to obtain minutes.
 The mock matrix is not suitable for reporting real results.
 
 In Python, construct `ALNS` or `VNS` and call the instance. Both implement the
