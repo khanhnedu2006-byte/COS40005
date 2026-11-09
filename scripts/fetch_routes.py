@@ -317,10 +317,17 @@ def ring_avoid_rects():
     return _RING_RECTS
 
 
+# Hướng xe (độ, 0 = Bắc, 90 = Đông) khi XUẤT PHÁT từ điểm này. Cầu Rồng: toạ độ ở đầu cầu phía Đông;
+# không khai hướng thì TomTom đặt xe trên làn đi về trung tâm → giờ cấm phải vòng ~30 km (09/11/2026).
+ORIGIN_HEADING = {"P001": 90}
+
+
 def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None, depart=None):
     dims = BUS_DIMENSIONS if dims is None else dims
     params = {"key": key, "travelMode": travel_mode, "traffic": "true", "routeType": "fastest",
               "departAt": depart or depart_time(slot), "maxAlternatives": "3", **dims}
+    if a.get("id") in ORIGIN_HEADING:
+        params["vehicleHeading"] = ORIGIN_HEADING[a["id"]]
     url = (f"https://api.tomtom.com/routing/1/calculateRoute/"
            f"{a['lat']},{a['lon']}:{b['lat']},{b['lon']}/json?" + urllib.parse.urlencode(params))
     # Trong giờ cấm: bảo TomTom tránh vành đai ngay khi tìm đường (POST + avoidAreas)
@@ -504,7 +511,10 @@ def fetch(args):
     if path.exists():
         with open(path, encoding="utf-8") as f:
             done = {(r["from_id"], r["to_id"], r.get("slot")) for r in map(json.loads, f)}
-    todo = [j for j in todo_all if (j[0]["id"], j[1]["id"], j[2]) not in done]
+    redo = set(args.refetch_from.split(",")) if args.refetch_from else set()
+    todo = [j for j in todo_all if (j[0]["id"], j[1]["id"], j[2]) not in done or j[0]["id"] in redo]
+    if redo:
+        print(f"Lấy lại mọi chặng đi ra từ: {', '.join(sorted(redo))} (bản mới ghi sau, build giữ bản mới nhất)")
     bad = unstable_ids(points)
     # Ưu tiên cặp mà cả hai điểm đã chốt toạ độ
     todo.sort(key=lambda j: (j[0]["id"] in bad) + (j[1]["id"] in bad))
@@ -693,11 +703,24 @@ def build(args):
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUT_FILE.with_suffix(".tmp")
     t0, n_rows, n_infeasible, seen = time.monotonic(), 0, 0, set()
+    # Lượt 1: tìm dòng cuối cùng của mỗi khoá (chạy lại / lấy lại → bản mới nhất thắng)
+    import re
+    key_re = re.compile(r'"from_id": "([^"]+)", "to_id": "([^"]+)", "slot": (null|"[^"]+")')
+    last = {}
+    with open(raw_file(args.provider), encoding="utf-8") as fin:
+        for line_no, line in enumerate(fin, 1):
+            m = key_re.search(line, 0, 200)
+            if m:
+                last[m.groups()] = line_no
+    keep = set(last.values())
+    print(f"File thô: {line_no} dòng, {len(keep)} khoá duy nhất (bỏ {line_no - len(keep)} bản cũ)")
     with open(raw_file(args.provider), encoding="utf-8") as fin, \
             open(tmp, "w", newline="", encoding="utf-8-sig") as fout:
         w = csv.DictWriter(fout, fieldnames=fields)
         w.writeheader()
         for line_no, line in enumerate(fin, 1):
+            if line_no not in keep:
+                continue
             r = json.loads(line)
             a, b = points.get(r["from_id"]), points.get(r["to_id"])
             if a is None or b is None:
@@ -710,7 +733,7 @@ def build(args):
             for slot in ([r["slot"]] if per_slot else list(TIME_SLOTS)):
                 key = (a["id"], b["id"], slot)
                 if key in seen:
-                    continue                           # bản ghi trùng (chạy lại) → giữ bản đầu
+                    continue                           # (đã lọc ở lượt 1, giữ để an toàn)
                 seen.add(key)
                 if banned_in(slot) and (a["id"] in deep or b["id"] in deep):
                     ok = []
@@ -755,6 +778,7 @@ if __name__ == "__main__":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
             sp.add_argument("--workers", type=int, default=4, help="số request gọi song song")
+            sp.add_argument("--refetch-from", default="", help="mã điểm (cách nhau bằng dấu phẩy): lấy lại chặng đi ra")
             sp.add_argument("--stable-only", action="store_true",
                             help="chỉ lấy cặp mà cả hai điểm đã chốt toạ độ")
     args = ap.parse_args()
