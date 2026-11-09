@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 
-from busroute.routing.orienteering import ODMatrix
-from busroute.routing.od_evaluation import evaluate, greedy_route, shortest_route
 from busroute.routing.metaheuristics import ALNS, VNS
+from busroute.routing.od_evaluation import evaluate, greedy_route, shortest_route
+from busroute.routing.orienteering import ODMatrix
 from busroute.routing.ppo_od import (
     Features,
     PPOConfig,
@@ -18,6 +18,7 @@ from busroute.routing.ppo_od import (
     train,
 )
 from busroute.utils.timeslots import to_minutes
+from ppo_progress import PPOProgress
 
 
 def main(argv=None):
@@ -35,14 +36,14 @@ def main(argv=None):
         default="checkpoints/ppo.zip",
         help="Output checkpoint path (default: checkpoints/ppo.zip)",
     )
-    training.add_argument("--steps", type=int, default=200000)
+    training.add_argument("--steps", type=int, default=256)
     training.add_argument("--seed", type=int, default=0)
     training.add_argument("--lr", type=float, default=0.0003)
     training.add_argument("--gamma", type=float, default=0.99)
     training.add_argument("--clip-eps", type=float, default=0.2)
     training.add_argument("--hidden-dim", type=int, default=64)
     training.add_argument("--rollout-steps", type=int, default=256)
-    training.add_argument("--epochs", type=int, default=4)
+    training.add_argument("--epochs", type=int, default=1000)
     training.add_argument("--minibatch-size", type=int, default=32)
     training.add_argument("--eval-cases", type=int, default=20)
     inference = sub.add_parser("infer")
@@ -71,7 +72,7 @@ def main(argv=None):
             epochs=args.epochs,
             minibatch_size=args.minibatch_size,
         )
-        result = train(matrix, args.matrix, cfg, args.checkpoint, args.eval_cases)
+        result = train(matrix, args.matrix, cfg, args.checkpoint, args.eval_cases, callback=PPOProgress())
     else:
         model = load_policy(args.checkpoint, args.matrix)
         features = Features(matrix, load_coordinates(args.matrix))
@@ -92,7 +93,7 @@ def main(argv=None):
                     args.end,
                     to_minutes(args.departure),
                     args.budget_min * 60,
-                )   
+                )
             except ValueError as exc:
                 parser.exit(2, f"error: {exc}\n")
             result = route.to_dict()

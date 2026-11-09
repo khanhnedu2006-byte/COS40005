@@ -30,7 +30,7 @@ the OD matrix in `data/final/od_matrix.csv`, rather than those graph files.
 - All bus restrictions are **hard-coded** in `src/busroute/config/` – OSM is used only as the base map.
 - Never commit raw GPS logs or any driver video (see `.gitignore`).
 
-## Orienteering with ALNS and VNS
+## Orienteering and shortest-route baseline
 
 The OD-matrix solvers maximise the scores of unique POIs between a fixed start
 and end, subject to a travel-time budget. Run from the repository root after
@@ -39,18 +39,101 @@ installing the package:
 ```bash
 python scripts/solve_orienteering.py --algorithm alns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
 python scripts/solve_orienteering.py --algorithm vns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
+python scripts/solve_orienteering.py --algorithm aco --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
+python scripts/solve_orienteering.py --algorithm dijkstra --start H01 --end H02 --departure 08:00 --budget-min 240
 python scripts/solve_orienteering.py --algorithm ppo --checkpoint checkpoints/ppo.zip --start H01 --end H02 --departure 08:00 --budget-min 240
 ```
 
 Use `--matrix data/final/od_matrix_mock.csv` for a mock-data smoke test. Output is
-JSON with `route`, `score`, `duration_s` and `collected` for all three solvers.
-PPO requires a checkpoint trained on the same matrix; `--iterations` and `--seed`
-configure ALNS and VNS, while PPO uses its trained policy for inference.
-This replaces the older CLI fields `algorithm`, `travel_minutes` and `collected_pois`;
-divide `duration_s` by 60 to obtain minutes.
+JSON with `route`, `score`, `duration_min` and `collected` for all solvers.
+Add `--verbose` to write JSON-line progress to stderr while keeping the route
+JSON on stdout. ALNS, VNS and ACO report the initial solution and best score
+and duration after each iteration. Dijkstra reports search start, every 100
+expanded labels, and completion (including unsuccessful searches). Without
+`--verbose`, these progress records are suppressed. For example:
+
+```bash
+python scripts/solve_orienteering.py --algorithm alns --start H01 --end H02 --budget-min 240 --iterations 100 --verbose 2> search.jsonl
+```
+
+To open a native OSMnx map window, use the same arguments with
+`scripts/visualize_orienteering.py`:
+
+```bash
+uv sync --extra visualization
+uv run --extra visualization python scripts/visualize_orienteering.py --algorithm alns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
+```
+
+Alternatively, install plotting support with `pip install -e '.[visualization]'`.
+Tkinter and a graphical desktop are required (`python3-tk` on Ubuntu/Debian).
+The window starts the solver automatically; it has pan/zoom, Pause/Resume and
+animation speed controls. Close it to stop. The completed route is printed as
+JSON and the window stays open for inspection. ALNS and VNS animate selected
+removal, insertion and local-search actions, plus acceptance decisions. ACO,
+Dijkstra and PPO show their available progress and the final route.
+
+Roads use the existing cache in `configs/settings.yaml`; a missing graph is
+downloaded through the existing OSM pipeline. Blue shows the best route, green
+the current route and dashed orange the candidate. Paths are reconstructed on
+the directed OSM graph by road length; reported scores and times still come
+from the OD matrix. These paths can differ from the original provider routes
+and do not certify bus restrictions. Missing connections or stops more than
+300 metres from the graph are reported rather than drawn as road paths.
+
+### Interactive browser map
+
+The application now lives in the root-level [`Web/`](Web/) package. See
+[`documentation/`](documentation/README.md) for algorithms, visualization
+approaches, API contracts, type annotations and verification instructions.
+
+For a full street map with location inputs and recorded operator playback, run:
+
+```bash
+uv run --extra web python -m Web
+```
+
+This starts a local server at `http://127.0.0.1:8000` and opens your browser.
+Alternatively, use `pip install -e '.[web]'` followed by
+`python -m Web`. No Node.js, frontend build, map account
+or API key is required. MapLibre GL JS 5.24.0 is bundled locally; the OpenFreeMap
+basemap, labels and glyphs require internet access and a WebGL-capable browser.
+
+Choose existing hubs/POIs by searching their IDs or names, or click a map marker
+to set an endpoint. Choose ALNS, VNS, Ant Colony (ACO), or Dijkstra; set departure
+time and travel-time budget, then Run search. The heuristic solvers also use
+iterations and random seed; Dijkstra disables those inputs and shows expanded
+partial paths with a travel-time chart. The solver runs in a separate process; its
+completion is separate from animation completion. Pause, step, seek through the
+timeline, change playback speed, or replay the completed search. Fit route
+adjusts the viewport explicitly; animation preserves your pan/zoom. Stop cancels
+computation while retaining recorded steps. Download JSON saves the final
+matrix-based result. Existing command-line solver commands remain available.
+
+The OSM graph loads once in the background. The API and browser cache directed
+leg geometry across runs and stream route IDs rather than repeating road
+coordinates. Blue is best, green current, dashed amber candidate, and amber
+circles highlight affected stops. Reconstructed paths may differ from the
+matrix provider's routes; missing road connections are reported without
+substitute lines. The map also displays the central-ring boundary as context.
+
+Launch options: `--matrix data/final/od_matrix_mock.csv`, `--port 8001`, and
+`--no-browser`. The server holds the current run in memory until replaced or
+restarted; only one search runs at a time. Ctrl+C stops the server and worker.
+If roads fail to initialize, check the server's OSM-cache/network message and
+restart. If tiles fail, check internet access and use Retry map. Automated web
+API tests require `uv sync --extra web --extra test` before running pytest.
+
+PPO learns by simulation for the requested route when no checkpoint is supplied;
+`--ppo-steps` controls its learning budget. `--iterations` and `--seed`
+configure ALNS, VNS and ant colony optimisation (ACO), while checkpoint-based PPO uses its trained
+policy for inference. The Dijkstra-style baseline seeks a short feasible route,
+without trying to maximise POI score; it uses time-dependent arrival-minute
+labels and does not model waiting, so it is not guaranteed to find the exact
+shortest route when availability or travel times change between slots.
+The `duration_min` field reports travel time in minutes, matching `--budget-min`.
 The mock matrix is not suitable for reporting real results.
 
-In Python, construct `ALNS` or `VNS` and call the instance. Both implement the
+In Python, construct `ALNS`, `VNS`, or `AntColony` and call the instance. Each implements the
 `Algorithm` protocol and return a typed `RouteResult`:
 
 ```python
@@ -82,7 +165,28 @@ Install the project dependencies with `pip install -e .`. PPO uses SBX's JAX
 implementation, Gymnasium, and a custom masked GraphSAGE actor. The OD
 pipeline reads `data/final/od_matrix.csv` by default. Pass `--matrix PATH` to
 `train_ppo.py`, or before the subcommand in `ppo_routes.py`, to use another matrix.
-For example:
+To learn while solving a specific request, without a checkpoint:
+
+```bash
+python scripts/online_ppo.py --start H01 --end H02 --departure 08:00 --budget-min 240 --steps 2048
+```
+
+PPO repeatedly tries the requested scenario in the OD-matrix simulator, updates
+its policy after each rollout of 256 steps, and then returns the deterministic
+policy's route. The step budget is rounded up to complete rollouts; more steps
+take longer and do not guarantee a better route. This is simulated learning,
+not live traffic feedback. The CLI starts a fresh policy each time; in Python,
+reuse `OnlinePPOSearch(features, PPOConfig(...))` across calls to retain and
+continue updating the same in-memory policy. It is lost when the process exits.
+The dedicated script prints the final route as JSON on stdout and emits JSON-line
+progress on stderr at the end of each rollout: steps, completed policy updates,
+number of completed episodes, mean episode reward, and success rate. Rollout
+events occur before the next policy update; the final event includes that update.
+When no episode finishes in a rollout, reward and success rate are null. Capture
+the log with `2> ppo-training.jsonl` or view and save it with
+`2> >(tee ppo-training.jsonl >&2)` in Bash. Checkpoint training with
+`train_ppo.py` also emits progress on stderr.
+For a separately trained reusable checkpoint, for example:
 
 ```bash
 python scripts/train_ppo.py --checkpoint checkpoints/ppo.zip --seed 0
@@ -90,7 +194,7 @@ python scripts/ppo_routes.py infer --checkpoint checkpoints/ppo.zip --start H01 
 python scripts/ppo_routes.py evaluate --checkpoint checkpoints/ppo.zip --iterations 100 --output reports/ppo-evaluation.json
 ```
 
-Training defaults to 200,000 steps and 60–240 minute budgets. Use `python scripts/train_ppo.py --help`
+Training uses 60–240 minute budgets. Use `python scripts/train_ppo.py --help`
 for rollout, model and optimisation settings. Both training commands create
 `checkpoints/ppo.zip` by default; `--checkpoint` changes the output path.
 Evaluation uses the fixed held-out

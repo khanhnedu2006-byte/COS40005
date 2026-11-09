@@ -2,9 +2,13 @@ Metadata-Version: 2.4
 Name: cos40005
 Version: 0.1.0
 Requires-Python: >=3.10
+Requires-Dist: fastapi[extra,standard]>=0.162.2
 Requires-Dist: fastparquet>=2026.9.0
+Requires-Dist: folium>=0.20.0
+Requires-Dist: geopandas>=1.1.4
+Requires-Dist: mapclassify>=2.8.1
 Requires-Dist: networkx>=3.4.2
-Requires-Dist: osmnx>=2.0.7
+Requires-Dist: osmnx[all]>=2.0.7
 Requires-Dist: pandas>=2.3.3
 Requires-Dist: polars>=2.0.0
 Requires-Dist: pyarrow>=25.0.1
@@ -12,3 +16,14 @@ Requires-Dist: pytest>=9.2.0
 Requires-Dist: sbx-rl>=0.28.0
 Requires-Dist: scikit-learn-intelex>=2026.2.0
 Requires-Dist: stable-baselines3>=2.9.2
+Requires-Dist: typing-extensions>=4.12
+Provides-Extra: visualization
+Requires-Dist: matplotlib>=3.6; extra == "visualization"
+Requires-Dist: pyyaml>=6; extra == "visualization"
+Provides-Extra: web
+Requires-Dist: fastapi>=0.115; extra == "web"
+Requires-Dist: pydantic>=2.11; extra == "web"
+Requires-Dist: pyyaml>=6; extra == "web"
+Requires-Dist: uvicorn>=0.30; extra == "web"
+Provides-Extra: test
+Requires-Dist: httpx>=0.28; extra == "test"

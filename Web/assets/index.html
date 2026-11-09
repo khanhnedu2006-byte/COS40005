@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#16324f" />
+    <title>Đà Nẵng Route Lab</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2316324f'/%3E%3Cpath d='M8 24V10a4 4 0 0 1 8 0v12a4 4 0 0 0 8 0V8' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/assets/vendor/maplibre-gl.css" />
+    <link rel="stylesheet" href="/assets/app.css" />
+    <script defer src="/assets/vendor/maplibre-gl.js"></script>
+    <script defer src="/assets/app.js"></script>
+  </head>
+  <body>
+    <main id="map" aria-label="Interactive map of Đà Nẵng"></main>
+    <section class="panel" aria-label="Search settings">
+      <header class="panel-header">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32">
+            <path d="M8 24V10a4 4 0 0 1 8 0v12a4 4 0 0 0 8 0V8" />
+          </svg>
+        </div>
+        <div>
+          <h1>Đà Nẵng <span>Route Lab</span></h1>
+          <p>Watch a better route take shape.</p>
+        </div>
+        <button
+          id="collapse"
+          class="icon-button"
+          type="button"
+          aria-label="Collapse settings"
+          aria-expanded="true"
+        >
+          −
+        </button>
+      </header>
+      <div id="settings-body">
+        <div class="dataset">
+          <span class="status-dot" id="graph-dot"></span
+          ><span id="graph-status" role="status">Loading locations…</span>
+        </div>
+        <form id="run-form">
+          <div class="endpoints">
+            <label for="start"
+              >Start<input
+                id="start"
+                name="start"
+                list="start-options"
+                required
+                autocomplete="off"
+                placeholder="Find a hub or POI" /><small id="start-name"></small
+            ></label>
+            <span class="endpoint-connector" aria-hidden="true"></span>
+            <label for="end"
+              >Destination<input
+                id="end"
+                name="end"
+                list="end-options"
+                required
+                autocomplete="off"
+                placeholder="Find a hub or POI" /><small id="end-name"></small
+            ></label>
+            <datalist id="start-options"></datalist
+            ><datalist id="end-options"></datalist>
+          </div>
+          <label for="algorithm"
+            >Search algorithm<select id="algorithm" name="algorithm">
+              <option value="alns">ALNS — adaptive large neighbourhood</option>
+              <option value="vns">VNS — variable neighbourhood</option>
+              <option value="aco">Ant Colony — pheromone-guided search</option>
+              <option value="dijkstra">Dijkstra — shortest travel time</option>
+            </select></label
+          >
+          <p id="algorithm-objective" class="algorithm-objective">
+            Maximise unique POI score within the time budget.
+          </p>
+          <div class="input-row">
+            <label for="departure"
+              >Departure<input
+                id="departure"
+                name="departure"
+                type="time"
+                value="08:00"
+                required
+            /></label>
+            <label for="budget_min"
+              >Budget <span class="unit">min</span
+              ><input
+                id="budget_min"
+                name="budget_min"
+                type="number"
+                min="0.01"
+                step="any"
+                value="240"
+                required
+            /></label>
+          </div>
+          <div class="input-row">
+            <label for="iterations"
+              >Iterations<input
+                id="iterations"
+                name="iterations"
+                type="number"
+                min="0"
+                step="1"
+                value="100"
+                required
+            /></label>
+            <label for="seed"
+              >Random seed<input
+                id="seed"
+                name="seed"
+                type="number"
+                step="1"
+                value="0"
+                required
+            /></label>
+          </div>
+          <div id="form-error" class="error" role="alert" hidden></div>
+          <div class="run-buttons">
+            <button id="run" class="primary" type="submit" disabled>
+              Run search <span aria-hidden="true">▶</span></button
+            ><button id="stop" type="button" disabled>Stop</button>
+          </div>
+        </form>
+        <p class="settings-note">
+          Select a location on the map to set an endpoint.<br /><span
+            id="dataset-name"
+          ></span>
+        </p>
+      </div>
+    </section>
+
+    <div class="map-notice" id="map-notice" role="alert" hidden>
+      <span id="map-notice-text"></span
+      ><button id="retry-map" type="button">Retry map</button>
+    </div>
+    <aside
+      class="inspector"
+      id="inspector"
+      aria-label="Algorithm progress"
+      hidden
+    >
+      <div class="step-heading">
+        <span id="iteration-label">Construction</span
+        ><span id="decision" class="decision" hidden></span>
+      </div>
+      <h2 id="action-title">Ready to explore</h2>
+      <p id="action-detail">Choose endpoints and run a search.</p>
+      <div class="metrics">
+        <div><span>Route score</span><strong id="route-score">—</strong></div>
+        <div><span>Travel time</span><strong id="route-time">—</strong></div>
+        <div>
+          <span id="best-metric-label">Best score</span
+          ><strong id="best-score">—</strong>
+        </div>
+        <div>
+          <span id="stop-metric-label">Selected stops</span
+          ><strong id="stop-count">—</strong>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-heading">
+          <span id="chart-title">Best score by iteration</span
+          ><span id="chart-score">—</span>
+        </div>
+        <svg
+          id="score-chart"
+          viewBox="0 0 260 80"
+          role="img"
+          aria-label="Best route score over iterations"
+        >
+          <path d="M0 72H260" class="chart-grid" />
+          <polyline id="chart-line" points="" />
+          <circle id="chart-point" r="3" cx="0" cy="72" />
+        </svg>
+        <div class="chart-axis">
+          <span>0</span><span id="chart-end">100</span>
+        </div>
+      </div>
+      <details class="route-details">
+        <summary id="route-summary">Route stops</summary>
+        <ol id="route-stops"></ol>
+      </details>
+      <p
+        id="geometry-warning"
+        class="geometry-warning"
+        role="status"
+        hidden
+      ></p>
+    </aside>
+
+    <section class="playback" aria-label="Playback controls">
+      <div class="playback-top">
+        <div class="playback-title">
+          <strong>Search playback</strong
+          ><span id="search-state" role="status">Ready when you are</span>
+        </div>
+        <div class="legend" aria-label="Route legend">
+          <span><i class="best"></i>Best</span
+          ><span><i class="current"></i>Current</span
+          ><span><i class="candidate"></i>Candidate</span
+          ><span class="ring-key"><i class="ring"></i>Central ring</span>
+        </div>
+      </div>
+      <div class="timeline-row">
+        <span id="frame-number">0 / 0</span
+        ><input
+          id="timeline"
+          type="range"
+          min="0"
+          max="0"
+          value="0"
+          step="1"
+          aria-label="Playback timeline"
+          disabled
+        /><span id="playback-state">No steps yet</span>
+      </div>
+      <div class="playback-bottom">
+        <div class="transport">
+          <button
+            id="play"
+            class="transport-button"
+            type="button"
+            aria-label="Pause playback"
+            disabled
+          >
+            Ⅱ Pause</button
+          ><button id="step" type="button" disabled>Next step ›</button
+          ><label for="speed" class="speed-label"
+            >Speed<select id="speed">
+              <option value="1">1 step/s</option>
+              <option value="2">2 steps/s</option>
+              <option value="4">4 steps/s</option>
+              <option value="8" selected>8 steps/s</option>
+              <option value="16">16 steps/s</option>
+              <option value="30">30 steps/s</option>
+            </select></label
+          >
+        </div>
+        <div class="route-actions">
+          <button id="fit" type="button">Fit route</button
+          ><a id="download" class="button-link" aria-disabled="true"
+            >Download JSON</a
+          >
+        </div>
+      </div>
+      <p class="method-note">
+        Road paths are reconstructed from OSM. Scores and travel times use the
+        selected OD matrix.
+      </p>
+    </section>
+  </body>
+</html>

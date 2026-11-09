@@ -1,5 +1,19 @@
 README.md
 pyproject.toml
+Web/__init__.py
+Web/__main__.py
+Web/app.py
+Web/road_paths.py
+Web/serve_orienteering.py
+Web/types.py
+Web/assets/app.css
+Web/assets/app.js
+Web/assets/contracts.js
+Web/assets/index.html
+Web/assets/vendor/README.txt
+Web/assets/vendor/maplibre-LICENSE.txt
+Web/assets/vendor/maplibre-gl.css
+Web/assets/vendor/maplibre-gl.js
 src/busroute/__init__.py
 src/busroute/config/__init__.py
 src/busroute/config/pois.py
@@ -47,3 +61,5 @@ tests/test_polygon.py
 tests/test_ppo_od.py
 tests/test_restrictions.py
 tests/test_stage1.py
+tests/test_visualize_orienteering.py
+tests/test_web_orienteering.py

@@ -34,7 +34,7 @@ class RouteResult:
     def to_dict(self) -> dict:
         """Return the common JSON-compatible representation of a route."""
         return {"route": list(self.route), "score": self.score,
-                "duration_s": self.duration_s, "collected": sorted(self.collected)}
+                "duration_min": self.duration_s / 60, "collected": sorted(self.collected)}
 
 
 class ODMatrix:
