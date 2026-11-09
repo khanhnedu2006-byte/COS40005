@@ -25,7 +25,7 @@
         </div>
         <div>
           <h1>Đà Nẵng <span>Route Lab</span></h1>
-          <p>Watch a better route take shape.</p>
+          <p>Find your route. Explore every stop.</p>
         </div>
         <button
           id="collapse"
@@ -42,6 +42,9 @@
           <span class="status-dot" id="graph-dot"></span
           ><span id="graph-status" role="status">Loading locations…</span>
         </div>
+        <p id="search-state" class="search-state" role="status">
+          Choose endpoints to find a route.
+        </p>
         <form id="run-form">
           <div class="endpoints">
             <label for="start"
@@ -122,8 +125,8 @@
           <div id="form-error" class="error" role="alert" hidden></div>
           <div class="run-buttons">
             <button id="run" class="primary" type="submit" disabled>
-              Run search <span aria-hidden="true">▶</span></button
-            ><button id="stop" type="button" disabled>Stop</button>
+              Find route</button
+            ><button id="stop" type="button" disabled>Cancel</button>
           </div>
         </form>
         <p class="settings-note">
@@ -139,119 +142,60 @@
       ><button id="retry-map" type="button">Retry map</button>
     </div>
     <aside
-      class="inspector"
-      id="inspector"
-      aria-label="Algorithm progress"
+      id="route-guide"
+      class="route-guide"
+      aria-labelledby="guide-title"
       hidden
     >
-      <div class="step-heading">
-        <span id="iteration-label">Construction</span
-        ><span id="decision" class="decision" hidden></span>
-      </div>
-      <h2 id="action-title">Ready to explore</h2>
-      <p id="action-detail">Choose endpoints and run a search.</p>
-      <div class="metrics">
-        <div><span>Route score</span><strong id="route-score">—</strong></div>
-        <div><span>Travel time</span><strong id="route-time">—</strong></div>
-        <div>
-          <span id="best-metric-label">Best score</span
-          ><strong id="best-score">—</strong>
+      <header class="guide-header">
+        <div class="guide-heading">
+          <span class="guide-ready" role="status">Route ready</span>
+          <button id="guide-edit" type="button">Edit search</button>
         </div>
-        <div>
-          <span id="stop-metric-label">Selected stops</span
-          ><strong id="stop-count">—</strong>
-        </div>
-      </div>
-      <div class="chart-wrap">
-        <div class="chart-heading">
-          <span id="chart-title">Best score by iteration</span
-          ><span id="chart-score">—</span>
-        </div>
-        <svg
-          id="score-chart"
-          viewBox="0 0 260 80"
-          role="img"
-          aria-label="Best route score over iterations"
-        >
-          <path d="M0 72H260" class="chart-grid" />
-          <polyline id="chart-line" points="" />
-          <circle id="chart-point" r="3" cx="0" cy="72" />
-        </svg>
-        <div class="chart-axis">
-          <span>0</span><span id="chart-end">100</span>
-        </div>
-      </div>
-      <details class="route-details">
-        <summary id="route-summary">Route stops</summary>
-        <ol id="route-stops"></ol>
-      </details>
-      <p
-        id="geometry-warning"
-        class="geometry-warning"
-        role="status"
-        hidden
-      ></p>
-    </aside>
-
-    <section class="playback" aria-label="Playback controls">
-      <div class="playback-top">
-        <div class="playback-title">
-          <strong>Search playback</strong
-          ><span id="search-state" role="status">Ready when you are</span>
-        </div>
-        <div class="legend" aria-label="Route legend">
-          <span><i class="best"></i>Best</span
-          ><span><i class="current"></i>Current</span
-          ><span><i class="candidate"></i>Candidate</span
-          ><span class="ring-key"><i class="ring"></i>Central ring</span>
-        </div>
-      </div>
-      <div class="timeline-row">
-        <span id="frame-number">0 / 0</span
-        ><input
-          id="timeline"
-          type="range"
-          min="0"
-          max="0"
-          value="0"
-          step="1"
-          aria-label="Playback timeline"
-          disabled
-        /><span id="playback-state">No steps yet</span>
-      </div>
-      <div class="playback-bottom">
-        <div class="transport">
-          <button
-            id="play"
-            class="transport-button"
-            type="button"
-            aria-label="Pause playback"
-            disabled
-          >
-            Ⅱ Pause</button
-          ><button id="step" type="button" disabled>Next step ›</button
-          ><label for="speed" class="speed-label"
-            >Speed<select id="speed">
-              <option value="1">1 step/s</option>
-              <option value="2">2 steps/s</option>
-              <option value="4">4 steps/s</option>
-              <option value="8" selected>8 steps/s</option>
-              <option value="16">16 steps/s</option>
-              <option value="30">30 steps/s</option>
-            </select></label
-          >
-        </div>
+        <h2 id="guide-title" tabindex="-1">Your route</h2>
+        <p id="guide-endpoints"></p>
+        <p id="guide-context"></p>
+        <dl class="guide-summary">
+          <div>
+            <dt>Travel time</dt>
+            <dd id="guide-duration">—</dd>
+          </div>
+          <div>
+            <dt>Route stops</dt>
+            <dd id="guide-count">—</dd>
+          </div>
+          <div>
+            <dt>POI score</dt>
+            <dd id="guide-score">—</dd>
+          </div>
+        </dl>
+      </header>
+      <ol
+        id="guide-stops"
+        class="guide-stops"
+        aria-label="Final route stop order"
+      ></ol>
+      <footer class="guide-footer">
+        <nav class="guide-navigation" aria-label="Browse route stops">
+          <button id="guide-previous" type="button">‹ Previous stop</button>
+          <span id="guide-progress" role="status"></span>
+          <button id="guide-next" type="button">Next stop ›</button>
+        </nav>
         <div class="route-actions">
-          <button id="fit" type="button">Fit route</button
-          ><a id="download" class="button-link" aria-disabled="true"
-            >Download JSON</a
-          >
+          <button id="fit" type="button">Fit route</button>
+          <a id="download" class="button-link">Download JSON</a>
+          <button id="retry-geometry" type="button" hidden>
+            Retry road path
+          </button>
         </div>
-      </div>
-      <p class="method-note">
-        Road paths are reconstructed from OSM. Scores and travel times use the
-        selected OD matrix.
-      </p>
-    </section>
+        <p id="guide-map-note" role="status" hidden></p>
+        <p id="guide-collected"></p>
+        <p>
+          Choose a numbered stop to locate it. Approximate OSM road paths;
+          travel time and POI score come from the OD matrix. Travel time
+          excludes visits.
+        </p>
+      </footer>
+    </aside>
   </body>
 </html>

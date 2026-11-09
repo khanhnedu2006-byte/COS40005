@@ -1,7 +1,7 @@
 """Typed JSON contracts shared by the web API and solver-process bridge.
 
-Coordinate tuples become JSON arrays during serialization. Optional event
-fields depend on the algorithm and action; ``event`` is always present.
+Coordinate tuples become JSON arrays during serialization. Only completed
+routes cross the solver-process boundary; intermediate search states stay local.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ class RouteSnapshot(RouteReference):
     """Serialized route and its matrix-derived objective values.
 
     Attributes:
-        route: Ordered point IDs; expansion snapshots may be partial paths.
+        route: Ordered point IDs from start through destination.
         score: Score of unique selected and passed POIs.
         duration_min: Elapsed travel time in minutes.
         collected: Sorted unique POI IDs credited to the route.
@@ -66,52 +66,18 @@ class SearchParameters(TypedDict):
     seed: int
 
 
-class EventHeader(TypedDict):
-    """Required discriminator for every search-progress record."""
-
-    event: str
-
-
-class SearchEvent(EventHeader, total=False):
-    """Sparse versioned progress record for heuristic or label-search actions.
+class RunStatusPayload(TypedDict):
+    """Current computation state and its final route, without search history.
 
     Attributes:
-        version: Wire-format version assigned by the parent process.
-        sequence: Monotonic event number, starting at one for each run.
-        algorithm: Solver producing the event.
-        best: Best feasible complete route found so far.
-        current: Current accepted route.
-        candidate: Candidate route or expanded partial path.
-        action: Selected operator action, such as insert or expand.
-        expanded: Number of Dijkstra labels popped from its priority queue.
-        queued: Number of pending labels after the expansion.
-        message: Explanation of a terminal error or failed operation.
+        status: Running, successful, failed, or cancelled computation.
+        result: Complete matrix-evaluated route after success, otherwise None.
+        message: Failure explanation, otherwise None.
     """
 
-    version: int
-    sequence: int
-    algorithm: AlgorithmName
-    iteration: int
-    iterations: int
-    best: RouteSnapshot
-    best_score: float
-    best_duration_min: float
-    current: RouteSnapshot
-    candidate: RouteSnapshot
-    action: str
-    accepted: bool
-    improved_best: bool
-    neighbourhood: int
-    temperature: float
-    destroy_operator: str
-    repair_operator: str
-    evaporation: float
-    pheromone_edges: int
-    expanded: int
-    queued: int
-    found: bool
-    duration_min: float | None
-    message: str
+    status: RunStatus
+    result: RouteSnapshot | None
+    message: str | None
 
 
 class PointMetadata(TypedDict):
@@ -171,7 +137,7 @@ class GeometryPayload(TypedDict):
 
 
 class RunCreatedPayload(TypedDict):
-    """Identifier used to subscribe to or stop the new run."""
+    """Identifier used to check, stop, or download the new run."""
 
     id: str
 

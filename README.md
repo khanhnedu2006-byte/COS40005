@@ -86,7 +86,7 @@ The application now lives in the root-level [`Web/`](Web/) package. See
 [`documentation/`](documentation/README.md) for algorithms, visualization
 approaches, API contracts, type annotations and verification instructions.
 
-For a full street map with location inputs and recorded operator playback, run:
+For a street map with location inputs and a final-route guide, run:
 
 ```bash
 uv run --extra web python -m Web
@@ -100,21 +100,24 @@ basemap, labels and glyphs require internet access and a WebGL-capable browser.
 
 Choose existing hubs/POIs by searching their IDs or names, or click a map marker
 to set an endpoint. Choose ALNS, VNS, Ant Colony (ACO), or Dijkstra; set departure
-time and travel-time budget, then Run search. The heuristic solvers also use
-iterations and random seed; Dijkstra disables those inputs and shows expanded
-partial paths with a travel-time chart. The solver runs in a separate process; its
-completion is separate from animation completion. Pause, step, seek through the
-timeline, change playback speed, or replay the completed search. Fit route
-adjusts the viewport explicitly; animation preserves your pan/zoom. Stop cancels
-computation while retaining recorded steps. Download JSON saves the final
-matrix-based result. Existing command-line solver commands remain available.
+time and travel-time budget, then Find route. The heuristic solvers also use
+iterations and random seed; Dijkstra disables those inputs. Computation runs in
+a separate process, and Cancel stops an active search. Only the completed route
+is displayed; intermediate search states are not recorded or animated by the web
+app. Existing command-line solver commands remain available.
+
+The final route opens immediately in a map-linked itinerary with start and
+destination names, travel time, POI score and numbered stops. Click a stop or use
+Previous/Next to locate it on the map. Fit route adjusts the viewport explicitly;
+completion preserves your pan/zoom. Edit search returns to the inputs, and
+Download JSON saves the final matrix-based result.
 
 The OSM graph loads once in the background. The API and browser cache directed
-leg geometry across runs and stream route IDs rather than repeating road
-coordinates. Blue is best, green current, dashed amber candidate, and amber
-circles highlight affected stops. Reconstructed paths may differ from the
-matrix provider's routes; missing road connections are reported without
-substitute lines. The map also displays the central-ring boundary as context.
+leg geometry across runs. Blue marks the final road path and numbered locations;
+the central-ring boundary provides context. Reconstructed paths may differ from
+the matrix provider's routes; missing road connections are reported without
+substitute lines. Stop order and totals remain available while roads initialize
+or if geometry fails.
 
 Launch options: `--matrix data/final/od_matrix_mock.csv`, `--port 8001`, and
 `--no-browser`. The server holds the current run in memory until replaced or

@@ -33,9 +33,8 @@ with probability `exp(score_delta / temperature)`; the temperature decreases
 toward 0.01. The best-ever route is retained separately. Operator weights use
 an exponential update: 80% previous weight plus 20% outcome reward.
 
-The browser displays the selected operators, actual removals/insertions,
-acceptance or rejection, temperature, and incumbent improvements. It does not
-emit every trial insertion considered inside an operator.
+The browser displays only the best complete route returned after all iterations.
+Operator tracing remains optional in the core solver for other consumers.
 
 ## Variable neighbourhood search: VNS
 
@@ -45,9 +44,8 @@ and relocation in one local-search pass. A better candidate becomes the new
 incumbent and resets the neighbourhood size to one. Otherwise the size cycles
 through one to four.
 
-Playback distinguishes the neighbourhood used to shake a route from the next
-neighbourhood selected after an iteration. Replacement and relocation events
-show successful local improvements, rather than every rejected local trial.
+Only the completed best route is sent to the browser; neighbourhood changes
+and local-search trials are not visualized.
 
 ## Ant Colony optimization: ACO
 
@@ -61,9 +59,8 @@ edges between stops, not individual OSM road segments. After construction,
 pheromone values are multiplied by 0.9 with a minimum of 0.1; edges in the
 best-ever route receive an additional 1.0.
 
-Playback shows each ant's start, selected insertions, the pheromone update,
-the completed ant route, and any new best route. The map illustrates the
-reinforced route; it is not a heatmap of every pheromone value.
+The browser displays the best completed route after computation. Ant
+construction and pheromone updates remain internal to the solver.
 
 ## Dijkstra-style time-dependent baseline
 
@@ -77,10 +74,9 @@ It is deterministic and does not use iterations or a random seed. Because
 labels group arrivals by minute and waiting is absent, it is an approximation
 for time-dependent travel times, not a general exact-optimality guarantee.
 
-The browser shows each popped label's partial path, elapsed time and queue size.
-The initial start-only prefix has zero travel time. Its chart plots expanded
-path time against label count; the other algorithms plot best score by iteration.
-Default CLI progress remains lightweight unless detailed tracing is requested.
+The browser displays only the returned complete path and travel time. Expanded
+partial paths are not sent to the web app. Default CLI progress remains
+lightweight unless detailed tracing is requested.
 
 There is a second use of Dijkstra in `Web/road_paths.py`: NetworkX finds a
 road-length-weighted path on OSM to draw a leg. That reconstruction does not
@@ -102,5 +98,5 @@ or loaded from matrix-bound checkpoints through the CLI. See the existing
 evaluation commands.
 
 For fair comparisons, use identical endpoints, departure, budget and matrix.
-Record completion, score, duration, computation time and seed. Playback speed
-controls presentation and must not be treated as solver runtime.
+Record completion, score, duration, computation time and seed. Road geometry
+initialization and rendering time are separate from solver runtime.

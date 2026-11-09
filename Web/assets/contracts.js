@@ -2,7 +2,7 @@
  * Browser-side documentation of the JSON contracts in Web/types.py.
  *
  * This module is imported by JSDoc only. It adds no runtime request or build
- * dependency; Python validates inputs and supplies these payloads over HTTP/SSE.
+ * dependency; Python validates inputs and supplies these payloads over HTTP.
  *
  * @typedef {"alns" | "vns" | "aco" | "dijkstra"} AlgorithmName
  *
@@ -16,7 +16,7 @@
  * @property {number} seed - Random seed; unused by Dijkstra.
  *
  * @typedef {Object} RouteSnapshot
- * @property {string[]} route - Ordered IDs, possibly a partial expanded path.
+ * @property {string[]} route - Ordered final-route IDs from start through destination.
  * @property {number} score - Unique selected/passed POI score.
  * @property {number} duration_min - Elapsed travel time in minutes.
  * @property {string[]} collected - Unique credited POI IDs.
@@ -29,35 +29,10 @@
  * @property {string} kind - Hub, POI, or custom point type.
  * @property {number} score - Matrix score, zero for hubs.
  *
- * @typedef {Object} SearchEvent
- * @property {string} event - Lifecycle or operator-event discriminator.
- * @property {number} sequence - One-based run-local SSE cursor.
- * @property {number} version - Event protocol version.
- * @property {AlgorithmName} algorithm - Solver producing the event.
- * @property {number} [iteration] - Current heuristic iteration.
- * @property {number} [iterations] - Configured heuristic iteration count.
- * @property {RouteSnapshot} [best] - Best complete route found so far.
- * @property {number} [best_score] - Scalar incumbent score for CLI consumers.
- * @property {number} [best_duration_min] - Scalar incumbent travel time.
- * @property {RouteSnapshot} [current] - Current accepted/constructed route.
- * @property {RouteSnapshot} [candidate] - Candidate or expanded partial path.
- * @property {string} [action] - Selected operator action.
- * @property {boolean} [accepted] - ALNS/VNS acceptance decision.
- * @property {boolean} [improved_best] - Whether a new incumbent was found.
- * @property {number} [expanded] - Dijkstra labels expanded so far.
- * @property {number} [queued] - Remaining priority-queue labels.
- * @property {boolean} [found] - Whether a Dijkstra destination was reached.
- * @property {number | null} [duration_min] - Destination duration at search end.
- * @property {number} [neighbourhood] - VNS neighbourhood size.
- * @property {number} [temperature] - ALNS acceptance temperature.
- * @property {string} [destroy_operator] - Selected ALNS removal method.
- * @property {string} [repair_operator] - Selected ALNS insertion method.
- * @property {number} [pheromone_edges] - Number of ACO tracked edges.
- * @property {number} [evaporation] - Multiplicative pheromone retention factor.
- * @property {string} [message] - Terminal error explanation.
- *
- * @typedef {Omit<SearchEvent, "candidate"> & {iteration: number, expanded: number,
- *   affected: string[], candidate?: RouteSnapshot | null}} PlaybackFrame
+ * @typedef {Object} RunStatusPayload
+ * @property {"running" | "result" | "error" | "stopped"} status - Computation state.
+ * @property {RouteSnapshot | null} result - Completed route after success.
+ * @property {string | null} message - Failure explanation.
  *
  * @typedef {Object} GeometryLeg
  * @property {string} from - Origin ID.
@@ -80,28 +55,24 @@
  * @property {GraphStatusPayload} status - Current background-loader state.
  *
  * @typedef {Object} BrowserState
- * @property {PointMetadata[]} points - Loaded locations.
+ * @property {PointMetadata[]} points - Loaded matrix locations.
  * @property {Map<string, PointMetadata>} byId - Marker lookup.
- * @property {PlaybackFrame[]} frames - Recorded cumulative snapshots.
- * @property {number} index - Displayed frame index, or -1 before playback.
- * @property {boolean} playing - Whether playback is advancing.
  * @property {string | null} runId - Current run ID.
- * @property {boolean} active - Whether computation is still running.
- * @property {EventSource | null} stream - Current reconnectable SSE stream.
+ * @property {boolean} active - Whether computation is running.
  * @property {boolean} ready - Whether location metadata loaded.
  * @property {boolean} graphReady - Whether geometry can be requested.
+ * @property {string | null} [graphError] - Graph initialization failure.
  * @property {Map<string, GeometryLeg>} geometryCache - Browser leg cache.
  * @property {Map<string, Promise<void>>} pending - In-flight geometry batches.
- * @property {number} renderToken - Prevents stale frame updates.
- * @property {boolean} busy - Whether a frame awaits road geometry.
+ * @property {number} renderToken - Prevents stale geometry updates.
  * @property {number} generation - Prevents updates from a replaced run.
  * @property {SearchParameters | null} params - Inputs for the displayed run.
- * @property {number} lastAdvance - Last animation timestamp in milliseconds.
  * @property {boolean} mapReady - Whether custom map layers exist.
- * @property {RouteSnapshot | null} result - Downloadable final result.
- * @property {Record<string, string>} renderedRoutes - Last rendered ID sequences.
+ * @property {boolean} initialFit - Whether the initial location bounds were set.
+ * @property {RouteSnapshot | null} result - The only route displayed.
+ * @property {boolean} guideOpen - Whether the final itinerary is visible.
+ * @property {number} guideStopIndex - Selected final-route stop, zero-based.
  * @property {string | null} markerSelection - Current endpoint signature.
- * @property {string | null} lastAffected - Last highlighted-stop signature.
  * @property {Object} [ring] - Central-ring GeoJSON.
  */
 export {};

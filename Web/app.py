@@ -12,7 +12,7 @@ import runpy
 import threading
 import time
 import uuid
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from multiprocessing.process import BaseProcess
 from multiprocessing.queues import Queue as ProcessQueue
@@ -20,8 +20,8 @@ from multiprocessing.synchronize import Event as ProcessEvent
 from pathlib import Path
 from typing import TypeAlias, cast
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -42,8 +42,8 @@ from Web.types import (
     RouteSnapshot,
     RunCreatedPayload,
     RunStatus,
+    RunStatusPayload,
     RunStoppedPayload,
-    SearchEvent,
     SearchParameters,
 )
 
@@ -112,7 +112,7 @@ def route_snapshot(result: RouteResult) -> RouteSnapshot:
     """Serialize a domain result into the typed browser snapshot contract.
 
     Args:
-        result: Complete or partial feasible route evaluated on the OD matrix.
+        result: Completed feasible route evaluated on the OD matrix.
 
     Returns:
         A JSON-compatible route, score, duration, and collected-POI record.
@@ -128,34 +128,29 @@ def route_snapshot(result: RouteResult) -> RouteSnapshot:
 def search_worker(
     matrix_path: str,
     params: SearchParameters,
-    output: ProcessQueue[SearchEvent],
+    output: ProcessQueue[RunStatusPayload],
     cancelled: ProcessEvent,
 ) -> None:
-    """Run one solver in a spawned process and forward progress records.
+    """Compute a final route without recording intermediate visualization data.
 
     Args:
         matrix_path: Absolute path to the selected OD matrix.
         params: Validated solver configuration.
-        output: Bounded inter-process queue consumed by the parent.
+        output: Queue receiving a single terminal result or failure.
         cancelled: Cooperative cancellation flag shared with the parent.
     """
 
-    def emit(event: SearchEvent) -> None:
-        """Queue one event, checking cancellation while backpressure is active.
+    def check_cancelled(_event: dict[str, object]) -> None:
+        """Check cancellation at solver checkpoints without retaining progress.
 
         Args:
-            event: Algorithm progress or terminal result record.
+            _event: Lightweight solver progress, discarded immediately.
 
         Raises:
             SearchCancelled: The parent requested cancellation.
         """
-        while not cancelled.is_set():
-            try:
-                output.put(event, timeout=0.1)
-                return
-            except queue.Full:
-                pass
-        raise SearchCancelled()
+        if cancelled.is_set():
+            raise SearchCancelled()
 
     try:
         matrix = ODMatrix.from_csv(matrix_path)
@@ -166,8 +161,7 @@ def search_worker(
                 params["end"],
                 to_minutes(params["departure"]),
                 params["budget_min"] * 60,
-                progress=emit,
-                trace=True,
+                progress=check_cancelled,
             )
             if result is None:
                 raise ValueError("No feasible route found within the time budget")
@@ -175,8 +169,7 @@ def search_worker(
             solver = {"alns": ALNS, "vns": VNS, "aco": AntColony}[params["algorithm"]](
                 iterations=params["iterations"],
                 seed=params["seed"],
-                progress=emit,
-                trace=True,
+                progress=check_cancelled,
             )
             result = solver(
                 matrix,
@@ -185,53 +178,44 @@ def search_worker(
                 to_minutes(params["departure"]),
                 params["budget_min"] * 60,
             )
-        snapshot = route_snapshot(result)
-        completion: SearchEvent = {
-            "event": "result",
-            "best": snapshot,
-            "current": snapshot,
-        }
-        if params["algorithm"] != "dijkstra":
-            completion.update(
-                iteration=params["iterations"], iterations=params["iterations"]
-            )
-        emit(completion)
+        check_cancelled({})
+        output.put(
+            {"status": "result", "result": route_snapshot(result), "message": None}
+        )
     except SearchCancelled:
         pass
     except Exception as exc:  # noqa: BLE001 -- process boundary must report failures
-        try:
-            emit({"event": "error", "message": str(exc)})
-        except SearchCancelled:
-            pass
+        if not cancelled.is_set():
+            output.put({"status": "error", "result": None, "message": str(exc)})
 
 
 class SearchRun:
-    """Own one solver process and its ordered in-memory event history.
+    """Own one isolated computation and retain only its terminal outcome.
 
     Attributes:
         id: Unique public identifier for this run.
         params: Validated inputs used by the child process.
-        events: Ordered progress records retained for playback/reconnection.
         status: Running or terminal state.
-        result: Final complete route, present only after successful completion.
+        result: Final route, present only after successful completion.
+        message: Failure explanation, if computation failed.
         process: Spawned solver process, separate from the API event loop.
     """
 
     def __init__(self, matrix_path: str | Path, params: SearchParameters) -> None:
-        """Start a solver process and its queue-collection thread.
+        """Start a solver and its terminal-result collection thread.
 
         Args:
             matrix_path: Matrix CSV used by this run.
             params: Validated search inputs to copy to the child process.
         """
         self.id = uuid.uuid4().hex
-        self.params: SearchParameters = params
-        self.events: list[SearchEvent] = []
+        self.params = params
         self.status: RunStatus = "running"
         self.result: RouteSnapshot | None = None
+        self.message: str | None = None
         self.lock = threading.Lock()
         ctx = mp.get_context("spawn")
-        self.output: ProcessQueue[SearchEvent] = ctx.Queue(maxsize=128)
+        self.output: ProcessQueue[RunStatusPayload] = ctx.Queue(maxsize=1)
         self.cancelled: ProcessEvent = ctx.Event()
         self.process: BaseProcess = ctx.Process(
             target=search_worker,
@@ -242,75 +226,62 @@ class SearchRun:
         self.collector = threading.Thread(target=self._collect, daemon=True)
         self.collector.start()
 
-    def _append(self, event: SearchEvent) -> None:
-        """Assign wire metadata and atomically append an event if still active.
+    def _finish(self, outcome: RunStatusPayload) -> None:
+        """Atomically retain a terminal outcome if the run is still active.
 
         Args:
-            event: Unnumbered progress record from the solver or collector.
+            outcome: Completed result, failure, or cancellation record.
         """
         with self.lock:
             if self.status in TERMINAL:
                 return
-            event = {
-                **event,
-                "version": 1,
-                "sequence": len(self.events) + 1,
-                "algorithm": self.params["algorithm"],
-            }
-            self.events.append(event)
-            if event["event"] in TERMINAL:
-                self.status = cast(RunStatus, event["event"])
-                self.result = event.get("best")
+            self.status = outcome["status"]
+            self.result = outcome["result"]
+            self.message = outcome["message"]
 
     def _collect(self) -> None:
-        """Drain the child queue and turn abnormal process exit into an error."""
+        """Receive the final outcome and report unexpected worker exits."""
         try:
             while True:
                 try:
-                    event = self.output.get(timeout=0.2)
+                    outcome = self.output.get(timeout=0.2)
                 except queue.Empty:
                     if self.process.is_alive():
                         continue
-                    self._append(
-                        {"event": "stopped"}
+                    outcome: RunStatusPayload = {
+                        "status": "stopped" if self.cancelled.is_set() else "error",
+                        "result": None,
+                        "message": None
                         if self.cancelled.is_set()
-                        else {
-                            "event": "error",
-                            "message": "Solver process exited unexpectedly",
-                        }
-                    )
-                    break
-                self._append(event)
-                if event["event"] in TERMINAL:
-                    break
+                        else "Solver process exited unexpectedly",
+                    }
+                self._finish(outcome)
+                break
         finally:
             self.process.join(timeout=1)
             self.output.close()
 
-    def snapshot(self, after: int = 0) -> tuple[list[SearchEvent], RunStatus]:
-        """Copy events after a cursor without exposing mutable internal storage.
-
-        Args:
-            after: Number of already-consumed events, or zero for all events.
+    def snapshot(self) -> RunStatusPayload:
+        """Read the status and final result under the same lock.
 
         Returns:
-            New events and the run status observed under the same lock.
+            Computation status, final route if successful, and failure message.
         """
         with self.lock:
-            return list(self.events[after:]), self.status
+            return {
+                "status": self.status,
+                "result": self.result,
+                "message": self.message,
+            }
 
     def stop(self) -> None:
-        """Cancel cooperatively, terminate if necessary, and retain the history.
-
-        An already-completed result remains successful rather than becoming a
-        stopped run. Joins are bounded so API shutdown cannot wait indefinitely.
-        """
+        """Cancel with bounded waits, preserving an already-completed result."""
         self.cancelled.set()
         self.process.join(timeout=0.4)
         if self.process.is_alive():
             self.process.terminate()
             self.process.join(timeout=1)
-        self._append({"event": "stopped"})
+        self._finish({"status": "stopped", "result": None, "message": None})
         self.collector.join(timeout=1)
 
 
@@ -491,7 +462,7 @@ def create_app(
         graph_loader: Road resolver factory, replaceable for focused tests.
 
     Returns:
-        An application with REST/SSE endpoints and a lifespan-managed worker.
+        An application with REST endpoints and a lifespan-managed worker.
 
     Raises:
         OSError: Required matrix or configuration files cannot be read.
@@ -627,7 +598,7 @@ def create_app(
             body: Validated search parameters from the browser.
 
         Returns:
-            The run ID used for streaming, cancellation, and result download.
+            The run ID used for status polling, cancellation, and result download.
 
         Raises:
             HTTPException: HTTP 422 for unknown points or 409 for overlap.
@@ -639,58 +610,24 @@ def create_app(
         run = state.start(cast(SearchParameters, body.model_dump()))
         return {"id": run.id}
 
-    @app.get("/api/runs/{run_id}/events")
-    async def events(
-        run_id: str, request: Request, after: int = 0
-    ) -> StreamingResponse:
-        """Stream ordered progress, resuming after a client event cursor.
+    @app.get("/api/runs/{run_id}")
+    def run_status(run_id: str) -> RunStatusPayload:
+        """Report computation status and the final route without search steps.
 
         Args:
-            run_id: Run identifier to subscribe to.
-            request: Incoming request used to detect disconnection and headers.
-            after: Query-string cursor; Last-Event-ID can advance it further.
+            run_id: Identifier returned when starting the computation.
 
         Returns:
-            A server-sent-event response ending at a terminal run event.
+            Running or terminal status, final result, and failure message.
 
         Raises:
-            HTTPException: HTTP 404 for an unknown run or 422 for a bad cursor.
+            HTTPException: HTTP 404 for an unknown or replaced run.
         """
-        run = state.get_run(run_id)
-        try:
-            cursor = max(0, after, int(request.headers.get("last-event-id", 0)))
-        except ValueError as exc:
-            raise HTTPException(422, "Invalid event cursor") from exc
-
-        async def stream() -> AsyncIterator[str]:
-            """Yield numbered JSON events and occasional keepalive comments.
-
-            Yields:
-                UTF-8 SSE records, preserving solver event order.
-            """
-            nonlocal cursor
-            last_ping = time.monotonic()
-            while not await request.is_disconnected():
-                batch, run_status = run.snapshot(cursor)
-                for event in batch:
-                    cursor = event["sequence"]
-                    yield f"id: {cursor}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
-                if run_status in TERMINAL:
-                    break
-                if time.monotonic() - last_ping > 10:
-                    yield ": keepalive\n\n"
-                    last_ping = time.monotonic()
-                await asyncio.sleep(0.05)
-
-        return StreamingResponse(
-            stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+        return state.get_run(run_id).snapshot()
 
     @app.post("/api/runs/{run_id}/stop")
     def stop_run(run_id: str) -> RunStoppedPayload:
-        """Cancel the current process while preserving its recorded steps.
+        """Cancel the current process, preserving any already-completed result.
 
         Args:
             run_id: Identifier of the run to stop.

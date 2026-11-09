@@ -30,7 +30,7 @@ Multiprocessing queues and cancellation events have explicit types.
 Use Google-style docstrings: a concise summary followed by `Args`, `Returns`,
 `Raises`, `Attributes` or `Yields` where applicable. Document units and explain
 missing-value semantics. Methods returning None need not repeat a `Returns`
-section. Sparse event fields are documented by algorithm and protocol meaning.
+section. Explain terminal status values and nullable result/error fields.
 
 Browser code remains plain JavaScript. Its JSDoc documents payloads, state,
 parameters and asynchronous results; `contracts.js` is type documentation only.
@@ -57,7 +57,7 @@ uv run --extra web --extra test python -m pytest tests/test_orienteering.py test
 ```
 
 The checks cover deterministic results, feasible snapshots, zero iterations,
-input validation, stop/repeat behavior, event order, stream resumption, geometry
+input validation, stop/repeat behavior, final-only queue payloads, geometry
 curves/direction, cache reuse, loading/failure states, typed OpenAPI responses,
 and packaged static-resource availability. Some restricted sandboxes block the
 local IPC used by TestClient and spawned workers; use a normal local terminal
@@ -69,16 +69,18 @@ time and machine resources; they are separate from browser visualization checks.
 ## Browser verification
 
 Exercise all four algorithms with the same real-data endpoints, departure and
-budget. Verify ACO construction and pheromone events, Dijkstra expansions and
-time-oriented chart, and ALNS/VNS acceptance/local-search actions. Check pause,
-step, seek, replay, stop, rerun and JSON download. Marker popups must set valid
-endpoints; narrow screens must retain accessible settings and playback controls.
+budget. Verify that only completed routes appear and that the guide's stop order,
+travel time and score match the downloaded JSON. Check numbered markers,
+Previous/Next, Fit route, Edit search, cancellation and reruns. Narrow screens
+must keep the stop list scrollable and search settings accessible. Verify that
+a cancelled or failed run does not display an old itinerary.
 
-Also check failed tile requests, missing road geometry, and viewport preservation
-during playback. A missing path must stay visibly missing. Confirm graph-load
-count stays at one across runs and cached-leg counts are reused. Measure solver
-runtime separately from animation speed; test API responsiveness during a long
-search rather than assuming smoother playback means faster optimization.
+Also check failed tiles, missing geometry, interrupted status requests and
+viewport preservation when results arrive. Missing legs must stay visibly
+missing. Confirm graph-load count stays at one across runs and cached legs are
+reused. Measure solver and geometry time separately; test API and map
+responsiveness during a long search. No SSE requests, intermediate route
+layers, playback controls or continuous rendering loop should remain.
 
 ## Known limits
 

@@ -1,12 +1,10 @@
-/* MapLibre renders the map; operator playback never rebuilds it. */
+/* Display only the completed route; computation stays in an isolated process. */
 "use strict";
 /**
  * @typedef {import("./contracts.js").AlgorithmName} AlgorithmName
  * @typedef {import("./contracts.js").SearchParameters} SearchParameters
  * @typedef {import("./contracts.js").RouteSnapshot} RouteSnapshot
  * @typedef {import("./contracts.js").PointMetadata} PointMetadata
- * @typedef {import("./contracts.js").SearchEvent} SearchEvent
- * @typedef {import("./contracts.js").PlaybackFrame} PlaybackFrame
  * @typedef {import("./contracts.js").GeometryLeg} GeometryLeg
  * @typedef {import("./contracts.js").GraphStatusPayload} GraphStatusPayload
  * @typedef {import("./contracts.js").BootstrapPayload} BootstrapPayload
@@ -24,47 +22,27 @@
    */
   const EMPTY = () => ({ type: "FeatureCollection", features: [] });
   const STYLE = "https://tiles.openfreemap.org/styles/bright";
-  const terminal = new Set(["result", "error", "stopped"]);
   /** @type {BrowserState} */
   const state = {
     points: [],
     byId: new Map(),
-    frames: [],
-    index: -1,
-    playing: true,
     runId: null,
     active: false,
-    stream: null,
     ready: false,
     graphReady: false,
     geometryCache: new Map(),
     pending: new Map(),
     renderToken: 0,
-    busy: false,
     generation: 0,
     params: null,
-    lastAdvance: 0,
     mapReady: false,
+    initialFit: false,
     result: null,
-    renderedRoutes: {},
+    guideOpen: false,
+    guideStopIndex: 0,
     markerSelection: null,
-    lastAffected: null,
   };
   let map;
-  let controlsScheduled = false;
-
-  /** Batch control updates to one browser animation frame.
-   * @returns {void}
-   */
-  function scheduleControls() {
-    if (controlsScheduled) return;
-    controlsScheduled = true;
-    requestAnimationFrame(() => {
-      controlsScheduled = false;
-      updateControls();
-    });
-  }
-
   /** Show or clear a form-level validation/server error.
    * @param {string} message - User-facing text; empty text clears the error.
    * @returns {void}
@@ -171,12 +149,19 @@
     body: JSON.stringify(body),
   });
 
-  /** Update endpoint colors and affected stops without rebuilding labels.
-   * @param {string[]} [affected=[]] - IDs highlighted for the displayed operator.
+  /** Update endpoint colors without rebuilding the map.
    * @returns {void}
    */
-  function updateMarkers(affected = []) {
+  function updateMarkers() {
     if (!state.mapReady) return;
+    const start =
+      state.guideOpen && state.result
+        ? state.result.route[0]
+        : $("start").value;
+    const end =
+      state.guideOpen && state.result
+        ? state.result.route.at(-1)
+        : $("end").value;
     const features = state.points.map((p) => ({
       type: "Feature",
       id: p.id,
@@ -186,30 +171,13 @@
         name: p.name,
         label: `${p.id}  ${p.name}`,
         kind: p.kind,
-        endpoint:
-          p.id === $("start").value
-            ? "start"
-            : p.id === $("end").value
-              ? "end"
-              : "none",
+        endpoint: p.id === start ? "start" : p.id === end ? "end" : "none",
       },
     }));
-    const selection = JSON.stringify([
-      $("start").value,
-      $("end").value,
-      state.points.length,
-    ]);
+    const selection = JSON.stringify([start, end, state.points.length]);
     if (state.markerSelection !== selection) {
       map.getSource("points").setData({ type: "FeatureCollection", features });
       state.markerSelection = selection;
-    }
-    const highlight = JSON.stringify(affected);
-    if (state.lastAffected !== highlight) {
-      map.getSource("affected").setData({
-        type: "FeatureCollection",
-        features: features.filter((f) => affected.includes(f.id)),
-      });
-      state.lastAffected = highlight;
     }
   }
 
@@ -235,40 +203,20 @@
         "line-dasharray": [4, 3],
       },
     });
-    for (const [name, color, width, opacity] of [
-      ["best", "#3d5fd9", 9, 0.4],
-      ["current", "#176b5b", 4, 0.95],
-      ["candidate", "#e7a33e", 3, 1],
+    map.addSource("route", { type: "geojson", data: EMPTY() });
+    for (const [id, color, width] of [
+      ["route-outline", "#ffffff", 9],
+      ["route-line", "#3d5fd9", 5],
     ]) {
-      map.addSource(name, { type: "geojson", data: EMPTY() });
-      const paint = {
-        "line-color": color,
-        "line-width": width,
-        "line-opacity": opacity,
-      };
-      if (name === "candidate") paint["line-dasharray"] = [2, 2];
       map.addLayer({
-        id: name,
+        id,
         type: "line",
-        source: name,
+        source: "route",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint,
+        paint: { "line-color": color, "line-width": width },
       });
     }
     map.addSource("points", { type: "geojson", data: EMPTY() });
-    map.addSource("affected", { type: "geojson", data: EMPTY() });
-    map.addLayer({
-      id: "affected",
-      type: "circle",
-      source: "affected",
-      paint: {
-        "circle-radius": 14,
-        "circle-color": "#e7a33e",
-        "circle-opacity": 0.3,
-        "circle-stroke-color": "#bc7b12",
-        "circle-stroke-width": 2,
-      },
-    });
     map.addLayer({
       id: "points",
       type: "circle",
@@ -307,12 +255,60 @@
         "text-halo-width": 2,
       },
     });
+    map.addSource("route-stops", { type: "geojson", data: EMPTY() });
+    map.addLayer({
+      id: "route-stops",
+      type: "circle",
+      source: "route-stops",
+      paint: {
+        "circle-radius": 10,
+        "circle-color": "#3d5fd9",
+        "circle-stroke-color": "white",
+        "circle-stroke-width": 2,
+      },
+    });
+    map.addLayer({
+      id: "route-stop-numbers",
+      type: "symbol",
+      source: "route-stops",
+      layout: {
+        "text-field": ["get", "number"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 11,
+        "text-allow-overlap": true,
+      },
+      paint: { "text-color": "white" },
+    });
+    map.addSource("guide-focus", { type: "geojson", data: EMPTY() });
+    map.addLayer({
+      id: "guide-focus",
+      type: "circle",
+      source: "guide-focus",
+      paint: {
+        "circle-radius": 13,
+        "circle-color": "#16324f",
+        "circle-stroke-color": "white",
+        "circle-stroke-width": 3,
+      },
+    });
+    map.addLayer({
+      id: "guide-focus-number",
+      type: "symbol",
+      source: "guide-focus",
+      layout: {
+        "text-field": ["get", "number"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 12,
+        "text-allow-overlap": true,
+      },
+      paint: { "text-color": "white" },
+    });
     state.mapReady = true;
-    state.renderedRoutes = {};
     state.markerSelection = null;
-    state.lastAffected = null;
     updateMarkers();
-    if (state.index >= 0) renderFrame(state.index);
+    updateGuideFocus();
+    renderFinalRoute();
+    fitInitialLocations();
   }
 
   /** Open a safe-text marker popup with endpoint-selection actions.
@@ -379,6 +375,15 @@
         const point = state.byId.get(feature.properties.id);
         if (point) showPoint(point, feature.geometry.coordinates);
       });
+      map.on("click", "route-stops", (event) =>
+        selectGuideStop(Number(event.features[0].properties.index)),
+      );
+      map.on("mouseenter", "route-stops", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "route-stops", () => {
+        map.getCanvas().style.cursor = "";
+      });
       map.on("mouseenter", "points", () => {
         map.getCanvas().style.cursor = "pointer";
       });
@@ -403,24 +408,41 @@
     }
   }
 
+  /** Reserve visible map space around the input panel and final itinerary.
+   * @returns {{top: number, bottom: number, left: number, right: number}}
+   */
+  function routePadding() {
+    if (window.matchMedia("(max-width:700px)").matches)
+      return {
+        top: 90,
+        bottom: state.guideOpen
+          ? $("route-guide").getBoundingClientRect().height + 45
+          : 50,
+        left: 35,
+        right: 35,
+      };
+    return {
+      top: 90,
+      bottom: 60,
+      left: Math.min(380, innerWidth * 0.34),
+      right: Math.min(state.guideOpen ? 440 : 60, innerWidth * 0.34),
+    };
+  }
+
   /** Fit the displayed route, or all points before a run, on explicit request.
    * @returns {void}
    */
   function fitRoute() {
     if (!map || !state.ready) return;
-    const frame = state.frames[state.index];
-    const route = frame?.candidate || frame?.current || frame?.best;
+    const route = state.result;
     const points = route
       ? route.route.map((id) => state.byId.get(id)).filter(Boolean)
       : state.points;
     if (!points.length) return;
     const bounds = new maplibregl.LngLatBounds();
     points.forEach((p) => bounds.extend([p.lon, p.lat]));
-    const mobile = window.matchMedia("(max-width:700px)").matches;
     map.fitBounds(bounds, {
-      padding: mobile
-        ? { top: 180, bottom: 240, left: 35, right: 35 }
-        : { top: 90, bottom: 220, left: 380, right: 350 },
+      padding: routePadding(),
       maxZoom: 15,
       duration: window.matchMedia("(prefers-reduced-motion:reduce)").matches
         ? 0
@@ -428,6 +450,155 @@
     });
   }
   $("fit").onclick = fitRoute;
+
+  /** Set the initial viewport once metadata and map layers are ready.
+   * @returns {void}
+   */
+  function fitInitialLocations() {
+    if (!state.ready || !state.mapReady || state.initialFit) return;
+    state.initialFit = true;
+    if (!state.result) fitRoute();
+  }
+
+  /** Build the completed itinerary and its matrix-derived route summary.
+   * @param {RouteSnapshot} result - Successfully completed final route.
+   * @returns {void}
+   */
+  function buildRouteGuide(result) {
+    const first = state.byId.get(result.route[0]);
+    const last = state.byId.get(result.route.at(-1));
+    $("guide-endpoints").textContent =
+      `${first?.name || result.route[0]} to ${last?.name || result.route.at(-1)}`;
+    $("guide-duration").textContent = `${result.duration_min.toFixed(1)} min`;
+    $("guide-count").textContent = String(result.route.length);
+    $("guide-score").textContent = result.score.toFixed(2);
+    $("guide-stops").replaceChildren();
+    result.route.forEach((id, index) => {
+      const point = state.byId.get(id);
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "guide-stop";
+      button.dataset.stopIndex = String(index);
+      button.dataset.pointId = id;
+      const number = document.createElement("span");
+      number.className = "guide-stop-number";
+      number.textContent = String(index + 1);
+      number.setAttribute("aria-hidden", "true");
+      const copy = document.createElement("span");
+      copy.className = "guide-stop-copy";
+      const role = document.createElement("span");
+      role.className = "guide-stop-role";
+      role.textContent =
+        index === 0
+          ? "Start"
+          : index === result.route.length - 1
+            ? "Destination"
+            : `Stop ${index + 1}`;
+      const name = document.createElement("strong");
+      name.textContent = point?.name || id;
+      const detail = document.createElement("small");
+      detail.textContent = `${id} · ${point?.kind === "hub" ? "Hub" : "Point of interest"}`;
+      copy.append(role, name, detail);
+      button.append(number, copy);
+      button.onclick = () => selectGuideStop(index);
+      item.append(button);
+      $("guide-stops").append(item);
+    });
+    state.guideStopIndex = 0;
+    selectGuideStop(0, false);
+    const params = state.params;
+    $("guide-context").textContent =
+      `${params.algorithm.toUpperCase()} · Departs ${params.departure} · ${params.budget_min} min budget`;
+    $("guide-collected").textContent =
+      `${result.collected.length} unique POIs credited, including those passed along the way.`;
+  }
+
+  /** Update the selected itinerary marker without changing road geometry.
+   * @returns {void}
+   */
+  function updateGuideFocus() {
+    if (!state.mapReady) return;
+    const point =
+      state.guideOpen && state.result
+        ? state.byId.get(state.result.route[state.guideStopIndex])
+        : null;
+    map.getSource("guide-focus").setData(
+      point
+        ? {
+            type: "FeatureCollection",
+            features: [
+              {
+                type: "Feature",
+                geometry: {
+                  type: "Point",
+                  coordinates: [point.lon, point.lat],
+                },
+                properties: { number: String(state.guideStopIndex + 1) },
+              },
+            ],
+          }
+        : EMPTY(),
+    );
+  }
+
+  /** Select an itinerary stop and optionally move the map to its location.
+   * @param {number} index - Zero-based final-route stop index.
+   * @param {boolean} [moveMap=true] - Whether to focus the chosen map location.
+   * @returns {void}
+   */
+  function selectGuideStop(index, moveMap = true) {
+    if (!state.result || index < 0 || index >= state.result.route.length)
+      return;
+    state.guideStopIndex = index;
+    const buttons = $("guide-stops").querySelectorAll(".guide-stop");
+    buttons.forEach((button, i) => {
+      if (i === index) button.setAttribute("aria-current", "step");
+      else button.removeAttribute("aria-current");
+    });
+    $("guide-previous").disabled = index === 0;
+    $("guide-next").disabled = index === state.result.route.length - 1;
+    $("guide-progress").textContent =
+      `${index + 1} of ${state.result.route.length}`;
+    updateGuideFocus();
+    if (moveMap) {
+      buttons[index]?.scrollIntoView({ block: "nearest" });
+      const point = state.byId.get(state.result.route[index]);
+      if (map && state.mapReady && point) {
+        map.flyTo({
+          center: [point.lon, point.lat],
+          zoom: 15,
+          padding: routePadding(),
+          duration: window.matchMedia("(prefers-reduced-motion:reduce)").matches
+            ? 0
+            : 500,
+        });
+      }
+    }
+  }
+
+  /** Reveal the completed itinerary and keep map layers tied to its inputs.
+   * @param {boolean} open - Whether the final result panel is visible.
+   * @returns {void}
+   */
+  function setGuideVisible(open) {
+    state.guideOpen = open && !!state.result;
+    $("route-guide").hidden = !state.guideOpen;
+    updateMarkers();
+    updateGuideFocus();
+    if (state.guideOpen && window.matchMedia("(max-width:700px)").matches)
+      collapse(true);
+  }
+  $("guide-edit").onclick = () => {
+    collapse(false);
+    $("start").focus();
+  };
+  $("guide-previous").onclick = () => selectGuideStop(state.guideStopIndex - 1);
+  $("guide-next").onclick = () => selectGuideStop(state.guideStopIndex + 1);
+  $("retry-geometry").onclick = () => renderFinalRoute();
+  window.matchMedia("(max-width:700px)").addEventListener("change", (event) => {
+    if (event.matches && state.guideOpen) collapse(true);
+  });
 
   /** Poll graph readiness while keeping the map and form interactive.
    * @returns {Promise<void>}
@@ -437,6 +608,7 @@
       /** @type {GraphStatusPayload} */
       const status = await api("/api/status");
       state.graphReady = status.graph === "ready";
+      if (state.graphReady && state.result) renderFinalRoute();
       $("graph-status").textContent =
         status.graph === "ready"
           ? "Road geometry ready"
@@ -450,10 +622,10 @@
           : status.graph === "error"
             ? "failed"
             : "");
-      if (status.graph === "error")
-        formError(
-          `Road geometry could not load: ${status.message}. Restart the server after checking its OSM cache or connection.`,
-        );
+      if (status.graph === "error") {
+        state.graphError = status.message || "Road graph unavailable";
+        if (state.result) renderFinalRoute();
+      }
       if (status.graph === "loading") window.setTimeout(refreshStatus, 1500);
     } catch (error) {
       $("graph-status").textContent = "Local server disconnected";
@@ -462,85 +634,60 @@
     }
   }
 
-  /** Combine a sparse event with the last frame and derive affected stops.
-   * @param {SearchEvent} event - Next ordered server progress record.
-   * @returns {PlaybackFrame}
-   */
-  function frameFrom(event) {
-    const previous = state.frames.at(-1) || {};
-    const frame = {
-      best: previous.best,
-      current: previous.current,
-      candidate: previous.candidate,
-      iteration: previous.iteration || 0,
-      expanded: previous.expanded || 0,
-      ...event,
-      affected: [],
-    };
-    if (["initial_solution", "result", "search_end"].includes(event.event)) {
-      frame.candidate = null;
-      if (event.event !== "search_end")
-        frame.current = event.current || event.best;
-    }
-    if (["insert", "remove", "replace", "relocate"].includes(event.action)) {
-      const before = previous.candidate || previous.current || previous.best;
-      const oldRoute = before?.route || [];
-      const newRoute = event.candidate?.route || [];
-      frame.affected = [
-        ...new Set([
-          ...oldRoute.filter((p) => !newRoute.includes(p)),
-          ...newRoute.filter((p) => !oldRoute.includes(p)),
-        ]),
-      ];
-      if (event.action === "relocate")
-        frame.affected = newRoute.filter((p, i) => oldRoute[i] !== p);
-    }
-    return frame;
-  }
-
-  /** Reflect computation, playback, and download availability in controls.
+  /** Reflect computation and final-result availability in the controls.
    * @returns {void}
    */
   function updateControls() {
     $("run").disabled = !state.ready || state.active;
-    $("stop").disabled = !state.active;
-    $("timeline").disabled = !state.frames.length;
-    $("timeline").max = Math.max(0, state.frames.length - 1);
-    $("timeline").value = Math.max(0, state.index);
-    $("frame-number").textContent =
-      `${Math.max(0, state.index + 1)} / ${state.frames.length}`;
-    $("play").disabled = !state.frames.length;
-    $("step").disabled = state.index >= state.frames.length - 1;
-    const atEnd = state.index >= state.frames.length - 1;
-    const replay = atEnd && !state.active && state.frames.length > 0;
-    $("play").textContent = replay
-      ? "↺ Replay"
-      : state.playing
-        ? "Ⅱ Pause"
-        : "▶ Play";
-    $("play").setAttribute(
-      "aria-label",
-      replay
-        ? "Replay search"
-        : state.playing
-          ? "Pause playback"
-          : "Play playback",
-    );
-    $("playback-state").textContent = !state.frames.length
-      ? "No steps yet"
-      : !state.graphReady
-        ? "Loading geometry"
-        : state.busy
-          ? "Preparing route"
-          : atEnd && !state.active
-            ? "Playback complete"
-            : state.playing
-              ? "Playing"
-              : "Paused";
+    $("stop").disabled = !state.active || !state.runId;
+    $("run").textContent = state.active ? "Finding route…" : "Find route";
+    $("run-form").setAttribute("aria-busy", String(state.active));
+  }
+
+  /** Poll only job status; successful completion reveals exactly one route.
+   * @param {string} runId - Accepted run to observe.
+   * @returns {Promise<void>}
+   */
+  async function pollRun(runId) {
+    if (state.runId !== runId || !state.active) return;
+    try {
+      /** @type {import("./contracts.js").RunStatusPayload} */
+      const outcome = await api(`/api/runs/${runId}`);
+      if (state.runId !== runId || !state.active) return;
+      if (outcome.status === "running") {
+        $("search-state").textContent =
+          `${state.params.algorithm.toUpperCase()} is finding your route…`;
+        window.setTimeout(() => pollRun(runId), 350);
+        return;
+      }
+      state.active = false;
+      if (outcome.status === "result") {
+        state.result = outcome.result;
+        buildRouteGuide(state.result);
+        setGuideVisible(true);
+        $("download").href = `/api/runs/${runId}/result`;
+        $("search-state").textContent = "Route ready";
+        $("guide-title").focus({ preventScroll: true });
+        renderFinalRoute();
+      } else {
+        $("search-state").textContent =
+          outcome.status === "stopped" ? "Search stopped" : "No route found";
+        if (outcome.status === "error") {
+          formError(outcome.message);
+          collapse(false);
+        }
+      }
+      updateControls();
+    } catch (error) {
+      if (state.runId !== runId || !state.active) return;
+      $("search-state").textContent = "Connection interrupted — retrying…";
+      window.setTimeout(() => pollRun(runId), 1500);
+    }
   }
 
   $("run-form").onsubmit = async (event) => {
     event.preventDefault();
+    if (state.active) return;
     formError("");
     endpointNames();
     if (!$("run-form").reportValidity()) return;
@@ -559,100 +706,49 @@
       formError("Choose different start and destination points.");
       return;
     }
-    $("run").disabled = true;
+    state.active = true;
+    state.runId = null;
+    updateControls();
+    $("search-state").textContent = "Starting route search…";
     try {
       const response = await api("/api/runs", post(params));
-      if (state.stream) state.stream.close();
       state.generation++;
       state.renderToken++;
-      state.busy = false;
-      state.renderedRoutes = {};
-      state.lastAffected = null;
-      state.frames = [];
-      state.index = -1;
       state.params = params;
       state.runId = response.id;
-      state.active = true;
-      state.playing = true;
       state.result = null;
-      $("inspector").hidden = true;
+      state.guideStopIndex = 0;
+      setGuideVisible(false);
+      $("guide-stops").replaceChildren();
+      $("guide-map-note").hidden = true;
+      $("guide-map-note").textContent = "";
+      $("retry-geometry").hidden = true;
       $("download").removeAttribute("href");
-      $("download").setAttribute("aria-disabled", "true");
-      $("search-state").textContent =
-        `${params.algorithm.toUpperCase()} is computing…`;
-      $("chart-end").textContent = params.iterations;
-      if (state.mapReady)
-        for (const name of ["best", "current", "candidate", "affected"])
-          map.getSource(name).setData(EMPTY());
-      if (window.matchMedia("(max-width:700px)").matches) collapse(true);
-      const runId = state.runId;
-      const stream = new EventSource(`/api/runs/${runId}/events`);
-      state.stream = stream;
-      stream.onmessage = (message) => {
-        if (state.runId !== runId) return;
-        /** @type {SearchEvent} */
-        const item = JSON.parse(message.data);
-        if (item.sequence <= state.frames.length) return;
-        state.frames.push(frameFrom(item));
-        if (terminal.has(item.event)) {
-          state.active = false;
-          stream.close();
-          if (item.event === "result") {
-            state.result = item.best;
-            $("search-state").textContent =
-              "Search complete — playback available";
-            $("download").href = `/api/runs/${runId}/result`;
-            $("download").setAttribute("aria-disabled", "false");
-          } else if (item.event === "error") {
-            $("search-state").textContent = "Search failed";
-            formError(item.message);
-          } else
-            $("search-state").textContent =
-              "Search stopped — recorded steps retained";
-        }
-        scheduleControls();
-      };
-      stream.onopen = () => {
-        if (state.active && state.runId === runId)
-          $("search-state").textContent =
-            `${params.algorithm.toUpperCase()} is computing…`;
-      };
-      stream.onerror = () => {
-        if (state.active && state.runId === runId)
-          $("search-state").textContent =
-            "Connection interrupted — reconnecting…";
-      };
+      if (state.mapReady) {
+        map.getSource("route").setData(EMPTY());
+        map.getSource("route-stops").setData(EMPTY());
+      }
+      updateControls();
+      pollRun(state.runId);
     } catch (error) {
+      state.active = false;
+      $("search-state").textContent = "Search could not start";
       formError(error.message);
+      updateControls();
     }
-    updateControls();
   };
   $("stop").onclick = async () => {
-    if (!state.active) return;
+    if (!state.active || !state.runId) return;
     $("stop").disabled = true;
     try {
       await api(`/api/runs/${state.runId}/stop`, { method: "POST" });
+      pollRun(state.runId);
     } catch (error) {
       formError(error.message);
       updateControls();
     }
   };
 
-  /** Collect unique directed leg requests across visible route roles.
-   * @param {PlaybackFrame} frame - Snapshot whose road paths will be displayed.
-   * @returns {Map<string, [string, string]>}
-   */
-  function legPairs(frame) {
-    const pairs = new Map();
-    for (const name of ["best", "current", "candidate"]) {
-      const route = frame[name]?.route || [];
-      for (let i = 1; i < route.length; i++) {
-        const pair = [route[i - 1], route[i]];
-        pairs.set(JSON.stringify(pair), pair);
-      }
-    }
-    return pairs;
-  }
   /** Fetch missing legs in bounded batches and reuse pending/cache entries.
    * @param {Map<string, [string, string]>} pairs - Directed ID pairs keyed by JSON.
    * @returns {Promise<void>}
@@ -681,277 +777,75 @@
     );
   }
 
-  /** Render objective-aware metrics, operator details, and route stops.
-   * @param {PlaybackFrame} frame - Displayed cumulative algorithm state.
-   * @returns {void}
-   */
-  function updateInspector(frame) {
-    $("inspector").hidden = false;
-    const result = frame.candidate || frame.current || frame.best;
-    const labels = {
-      initial_route: "Choose an initial route",
-      ant_start: "Start an ant route",
-      pheromone_update: "Update pheromone trails",
-      expand: "Expand a partial path",
-      insert: "Insert a stop",
-      remove: "Remove a stop",
-      destroy: "Choose ALNS operators",
-      shake: "Shake the neighbourhood",
-      replace: "Replace a stop",
-      relocate: "Move a stop",
-      initial_solution: "Initial solution",
-      search_start: "Start search",
-      search_end: "Search finished",
-      result: "Final route",
-      stopped: "Search stopped",
-      error: "Search failed",
-    };
-    $("action-title").textContent =
-      frame.event === "iteration"
-        ? state.params.algorithm === "aco"
-          ? "Complete an ant route"
-          : frame.accepted
-            ? "Accept candidate"
-            : "Keep current route"
-        : labels[frame.action || frame.event] || "Explore route";
-    const shortest = state.params.algorithm === "dijkstra";
-    $("iteration-label").textContent = shortest
-      ? `Expanded ${frame.expanded} labels`
-      : frame.iteration
-        ? `Iteration ${frame.iteration} of ${state.params.iterations}`
-        : "Initial construction";
-    const detail = [];
-    if (frame.destroy_operator)
-      detail.push(
-        `${frame.destroy_operator} removal, ${frame.repair_operator} repair`,
-      );
-    if (frame.neighbourhood)
-      detail.push(
-        `${frame.event === "iteration" ? "Next neighbourhood" : "Neighbourhood"} ${frame.neighbourhood}`,
-      );
-    if (frame.temperature !== undefined)
-      detail.push(`Temperature ${frame.temperature.toFixed(2)}`);
-    if (frame.affected.length)
-      detail.push(`Affected: ${frame.affected.join(", ")}`);
-    if (frame.queued !== undefined)
-      detail.push(`${frame.queued} labels waiting`);
-    if (frame.pheromone_edges !== undefined)
-      detail.push(
-        `Evaporate pheromone, then reinforce the best route (${frame.pheromone_edges} tracked edges)`,
-      );
-    $("action-detail").textContent =
-      frame.message ||
-      detail.join(". ") ||
-      (frame.event === "result"
-        ? shortest
-          ? "First feasible destination path found by the time-dependent label search."
-          : "Best feasible route found in this search."
-        : "Selected operator action; individual trial evaluations are omitted.");
-    $("decision").hidden = frame.accepted === undefined && !frame.improved_best;
-    $("decision").textContent = frame.improved_best
-      ? "New best"
-      : frame.accepted
-        ? "Accepted"
-        : "Rejected";
-    $("decision").className =
-      "decision" + (frame.accepted === false ? " rejected" : "");
-    $("route-score").textContent = result ? result.score.toFixed(2) : "—";
-    $("route-time").textContent = result
-      ? `${result.duration_min.toFixed(1)} min`
-      : "—";
-    $("best-metric-label").textContent = shortest
-      ? "Destination time"
-      : "Best score";
-    $("best-score").textContent = frame.best
-      ? shortest
-        ? `${frame.best.duration_min.toFixed(1)} min`
-        : frame.best.score.toFixed(2)
-      : "—";
-    $("stop-metric-label").textContent = shortest
-      ? "Path points"
-      : "Selected stops";
-    $("stop-count").textContent = result
-      ? shortest
-        ? result.route.length
-        : Math.max(0, result.route.length - 2)
-      : "—";
-    const complete = result?.route.at(-1) === state.params.end;
-    $("route-summary").textContent =
-      `${shortest && !complete ? "Partial path" : "Route stops"} (${result?.route.length || 0}${complete ? ", including endpoints" : ""})`;
-    $("route-stops").replaceChildren();
-    for (const id of result?.route || []) {
-      const li = document.createElement("li"),
-        button = document.createElement("button"),
-        point = state.byId.get(id);
-      button.textContent = `${id} ${point?.name || ""}`;
-      button.onclick = () => {
-        if (map && point) {
-          map.flyTo({
-            center: [point.lon, point.lat],
-            zoom: 15,
-            essential: false,
-          });
-          showPoint(point, [point.lon, point.lat]);
-        }
-      };
-      li.append(button);
-      $("route-stops").append(li);
-    }
-    drawProgressChart(frame, shortest);
-  }
-
-  /** Plot score improvement or Dijkstra's elapsed expansion times.
-   * @param {PlaybackFrame} frame - Currently displayed algorithm state.
-   * @param {boolean} shortest - Whether the selected solver minimises time.
-   * @returns {void}
-   */
-  function drawProgressChart(frame, shortest) {
-    const chart = state.frames
-      .slice(0, state.index + 1)
-      .filter((f) =>
-        shortest
-          ? f.action === "expand" && f.candidate
-          : (["initial_solution", "iteration"].includes(f.event) ||
-              f.action === "pheromone_update") &&
-            f.best,
-      )
-      .map((f) =>
-        shortest
-          ? { x: f.expanded, y: f.candidate.duration_min }
-          : { x: f.iteration, y: f.best.score },
-      );
-    const extent = shortest ? frame.expanded : state.params.iterations;
-    $("chart-title").textContent = shortest
-      ? "Expanded path time (min)"
-      : "Best score by iteration";
-    $("score-chart").setAttribute(
-      "aria-label",
-      shortest
-        ? "Expanded path travel time by label count"
-        : "Best route score over iterations",
-    );
-    $("chart-end").textContent = extent;
-    if (chart.length) {
-      const low = Math.min(...chart.map((f) => f.y));
-      const high = Math.max(low + 1, ...chart.map((f) => f.y));
-      const points = chart.map((f) => [
-        4 + (252 * f.x) / Math.max(1, extent),
-        70 - (62 * (f.y - low)) / (high - low),
-      ]);
-      $("chart-line").setAttribute(
-        "points",
-        points.map((p) => p.join(",")).join(" "),
-      );
-      $("chart-point").setAttribute("cx", points.at(-1)[0]);
-      $("chart-point").setAttribute("cy", points.at(-1)[1]);
-      $("chart-score").textContent = chart.at(-1).y.toFixed(2);
-    } else {
-      $("chart-line").setAttribute("points", "");
-      $("chart-score").textContent = "—";
-    }
-  }
-
-  /** Resolve road geometry and render only if this request is still current.
-   * @param {number} index - Requested zero-based recorded frame index.
+  /** Render only the completed route, reusing cached directed road legs.
    * @returns {Promise<void>}
    */
-  async function renderFrame(index) {
-    if (index < 0 || index >= state.frames.length) return;
-    const token = ++state.renderToken;
+  async function renderFinalRoute() {
+    if (!state.result) return;
+    if (!state.mapReady) {
+      $("guide-map-note").hidden = false;
+      $("guide-map-note").textContent =
+        "Waiting for the map. Your final itinerary is ready; use Retry map if a loading error appears.";
+      return;
+    }
+    const result = state.result;
     const generation = state.generation;
-    const frame = state.frames[index];
-    state.busy = true;
-    updateControls();
+    const token = ++state.renderToken;
+    const pairs = new Map();
+    for (let i = 1; i < result.route.length; i++) {
+      const pair = [result.route[i - 1], result.route[i]];
+      pairs.set(JSON.stringify(pair), pair);
+    }
+    map.getSource("route-stops").setData({
+      type: "FeatureCollection",
+      features: result.route.map((id, index) => {
+        const point = state.byId.get(id);
+        return {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [point.lon, point.lat] },
+          properties: { number: String(index + 1), index },
+        };
+      }),
+    });
+    $("guide-map-note").hidden = false;
+    $("retry-geometry").hidden = true;
+    if (!state.graphReady) {
+      $("guide-map-note").textContent = state.graphError
+        ? `Road geometry unavailable: ${state.graphError}. Stop locations and route totals are still available.`
+        : "Preparing road geometry… You can already browse the final stops.";
+      return;
+    }
+    $("guide-map-note").textContent = "Loading final road path…";
     try {
-      const pairs = legPairs(frame);
       await ensureGeometry(pairs);
-      if (token !== state.renderToken || generation !== state.generation)
+      if (generation !== state.generation || token !== state.renderToken)
         return;
-      const missing = new Set();
-      if (state.mapReady) {
-        for (const name of ["best", "current", "candidate"]) {
-          const route = frame[name]?.route || [];
-          const signature = JSON.stringify(route);
-          const features = [];
-          for (let i = 1; i < route.length; i++) {
-            const leg = state.geometryCache.get(
-              JSON.stringify([route[i - 1], route[i]]),
-            );
-            if (leg?.geometry)
-              features.push({
-                type: "Feature",
-                geometry: leg.geometry,
-                properties: {},
-              });
-            else missing.add(`${route[i - 1]} → ${route[i]}`);
-          }
-          if (state.renderedRoutes[name] !== signature) {
-            map
-              .getSource(name)
-              .setData({ type: "FeatureCollection", features });
-            state.renderedRoutes[name] = signature;
-          }
-        }
-        updateMarkers(frame.affected);
+      const features = [];
+      const missing = [];
+      for (const [key, pair] of pairs) {
+        const leg = state.geometryCache.get(key);
+        if (leg?.geometry)
+          features.push({
+            type: "Feature",
+            geometry: leg.geometry,
+            properties: {},
+          });
+        else missing.push(pair.join(" → "));
       }
-      state.index = index;
-      updateInspector(frame);
-      $("geometry-warning").hidden = !missing.size;
-      $("geometry-warning").textContent =
-        `Missing road connections: ${[...missing].slice(0, 4).join(", ")}${missing.size > 4 ? "…" : ""}. No substitute lines are drawn.`;
+      map.getSource("route").setData({ type: "FeatureCollection", features });
+      $("guide-map-note").hidden = !missing.length;
+      $("guide-map-note").textContent = missing.length
+        ? `Road path unavailable for ${missing.join(", ")}. Gaps are not drawn; stop order and matrix totals remain valid.`
+        : "";
     } catch (error) {
-      if (token !== state.renderToken) return;
-      if (error.status === 503)
-        $("playback-state").textContent = "Loading geometry";
-      else {
-        state.playing = false;
-        formError(
-          `Route geometry could not load: ${error.message}. Resume playback to retry.`,
-        );
-      }
-    } finally {
-      if (token === state.renderToken) {
-        state.busy = false;
-        updateControls();
-      }
+      if (generation !== state.generation || token !== state.renderToken)
+        return;
+      $("guide-map-note").textContent =
+        `Road path could not load: ${error.message}. The final stop order remains available.`;
+      $("retry-geometry").hidden = false;
     }
   }
 
-  $("play").onclick = () => {
-    if (state.index >= state.frames.length - 1 && !state.active) {
-      state.index = -1;
-      state.playing = true;
-    } else state.playing = !state.playing;
-    state.lastAdvance = 0;
-    updateControls();
-  };
-  $("step").onclick = () => {
-    state.playing = false;
-    renderFrame(state.index + 1);
-    updateControls();
-  };
-  $("timeline").oninput = (event) => {
-    state.playing = false;
-    renderFrame(Number(event.target.value));
-    updateControls();
-  };
-  /** Advance playback independently from solver computation and map panning.
-   * @param {number} timestamp - requestAnimationFrame time in milliseconds.
-   * @returns {void}
-   */
-  function animate(timestamp) {
-    if (
-      state.playing &&
-      state.graphReady &&
-      !state.busy &&
-      state.index < state.frames.length - 1 &&
-      timestamp - state.lastAdvance >= 1000 / Number($("speed").value)
-    ) {
-      state.lastAdvance = timestamp;
-      renderFrame(state.index + 1);
-    }
-    requestAnimationFrame(animate);
-  }
   window.addEventListener("pagehide", () => {
     if (state.active && state.runId)
       navigator.sendBeacon(`/api/runs/${state.runId}/stop`);
@@ -987,17 +881,13 @@
       endpointNames();
       updateControls();
       if (state.mapReady) map.getSource("ring").setData(state.ring);
-      if (map) {
-        if (state.mapReady) fitRoute();
-        else map.once("load", fitRoute);
-      }
+      fitInitialLocations();
       refreshStatus();
     } catch (error) {
       formError(
         `Locations could not load: ${error.message}. Restart the local server and reload.`,
       );
     }
-    requestAnimationFrame(animate);
   }
   initialize();
 })();

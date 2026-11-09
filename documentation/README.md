@@ -15,6 +15,7 @@ uv run --extra web python -m Web
 The server opens `http://127.0.0.1:8000`. Select endpoints, an algorithm, departure
 time and travel budget, then run the search. ALNS, VNS and Ant Colony also accept
 iteration and random-seed inputs. Dijkstra uses neither of those settings.
+Only the final path is visualized, with an ordered, map-linked route guide.
 
 Use `--no-browser`, `--port 8001`, or
 `--matrix data/final/od_matrix_mock.csv` after `-m Web` when needed. The checkout's
@@ -28,7 +29,7 @@ Tiles and labels require internet access; the solver uses the local OD matrix.
 - [Visualization approaches](visualization.md): static Folium, native desktop
   plotting, and the current interactive browser map, including their tradeoffs.
 - [Web application](web-application.md): folder structure, typed contracts,
-  event protocol, process lifecycle, geometry caching and HTTP endpoints.
+  final-result polling, process lifecycle, geometry caching and HTTP endpoints.
 - [Development and verification](development.md): type checks, Google-style
   docstrings, regression tests, browser checks and known limitations.
 

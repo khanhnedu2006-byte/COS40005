@@ -1,7 +1,6 @@
-"""Exercise real solver processes, event replay, and geometry API boundaries."""
+"""Exercise final-only solver jobs, cancellation, and geometry API boundaries."""
 
 import csv
-import json
 import threading
 import time
 
@@ -16,7 +15,7 @@ from fastapi.testclient import TestClient
 from busroute.routing.metaheuristics import ALNS, VNS, AntColony
 from busroute.routing.od_evaluation import shortest_route
 from busroute.routing.orienteering import ODMatrix
-from Web.app import create_app
+from Web.app import create_app, search_worker
 from Web.road_paths import RoadPaths
 
 
@@ -92,15 +91,18 @@ def client(matrix_path):
         yield session
 
 
-def read_events(client, run_id, **kwargs):
-    response = client.get(f"/api/runs/{run_id}/events", **kwargs)
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    return [
-        json.loads(line[6:])
-        for line in response.text.splitlines()
-        if line.startswith("data: ")
-    ]
+def wait_for_result(client, run_id):
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/runs/{run_id}")
+        assert response.status_code == 200
+        outcome = response.json()
+        assert set(outcome) == {"status", "result", "message"}
+        if outcome["status"] != "running":
+            return outcome
+        assert outcome["result"] is None
+        time.sleep(0.02)
+    pytest.fail("solver did not finish")
 
 
 def request(**changes):
@@ -137,35 +139,26 @@ def wait_for_graph(client):
         ("aco", 0),
     ],
 )
-def test_process_results_and_reconnect_cursor(
-    client, matrix_path, algorithm, iterations
-):
+def test_final_result_matches_core_solver(client, matrix_path, algorithm, iterations):
     params = request(algorithm=algorithm, iterations=iterations)
     response = client.post("/api/runs", json=params)
     assert response.status_code == 201
     run_id = response.json()["id"]
-    events = read_events(client, run_id)
-    assert events[0]["event"] == "search_start"
-    assert events[-1]["event"] == "result"
-    assert [e["sequence"] for e in events] == list(range(1, len(events) + 1))
-    assert any(e["event"] == "operator" for e in events)
+    outcome = wait_for_result(client, run_id)
+    assert outcome["status"] == "result" and outcome["message"] is None
     matrix = ODMatrix.from_csv(matrix_path)
     if algorithm == "dijkstra":
         expected = shortest_route(matrix, "A", "B", 480, 180)
-        assert any(e.get("action") == "expand" for e in events)
     else:
         solver = {"alns": ALNS, "vns": VNS, "aco": AntColony}[algorithm]
         expected = solver(iterations=iterations, seed=7)(matrix, "A", "B", 480, 180)
-        if algorithm == "aco" and iterations:
-            assert {"ant_start", "insert", "pheromone_update"} <= {
-                e.get("action") for e in events
-            }
-    assert events[-1]["best"] == expected.to_dict()
+    assert outcome["result"] == expected.to_dict()
     assert client.get(f"/api/runs/{run_id}/result").json() == expected.to_dict()
-    assert (
-        read_events(client, run_id, headers={"Last-Event-ID": str(len(events) - 1)})
-        == events[-1:]
-    )
+    assert client.get(f"/api/runs/{run_id}").json() == outcome
+    assert client.get(f"/api/runs/{run_id}/events").status_code == 404
+    assert not hasattr(client.app.state.lab.run, "events")
+    next_id = client.post("/api/runs", json=params).json()["id"]
+    assert wait_for_result(client, next_id) == outcome
 
 
 @pytest.mark.parametrize(
@@ -192,9 +185,13 @@ def test_one_process_at_a_time_stop_and_repeat(client):
     assert client.get(f"/api/runs/{run_id}/result").status_code == 409
     response = client.post(f"/api/runs/{run_id}/stop")
     assert response.status_code == 200 and response.json()["status"] == "stopped"
-    assert read_events(client, run_id)[-1]["event"] == "stopped"
+    assert wait_for_result(client, run_id) == {
+        "status": "stopped",
+        "result": None,
+        "message": None,
+    }
     next_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
-    assert read_events(client, next_id)[-1]["event"] == "result"
+    assert wait_for_result(client, next_id)["status"] == "result"
     assert client.get(f"/api/runs/{run_id}/result").status_code == 404
 
 
@@ -226,7 +223,7 @@ def test_graph_failure_does_not_hide_inputs_or_break_solver(matrix_path):
             client.post("/api/geometry", json={"legs": [["A", "B"]]}).status_code == 503
         )
         run_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
-        assert read_events(client, run_id)[-1]["event"] == "result"
+        assert wait_for_result(client, run_id)["status"] == "result"
 
 
 def test_loading_graph_does_not_block_inputs_or_computation(matrix_path):
@@ -240,7 +237,7 @@ def test_loading_graph_does_not_block_inputs_or_computation(matrix_path):
             bootstrap = client.get("/api/bootstrap").json()
             assert bootstrap["status"]["graph"] == "loading"
             run_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
-            assert read_events(client, run_id)[-1]["event"] == "result"
+            assert wait_for_result(client, run_id)["status"] == "result"
             assert (
                 client.post("/api/geometry", json={"legs": [["A", "B"]]}).status_code
                 == 503
@@ -251,13 +248,14 @@ def test_loading_graph_does_not_block_inputs_or_computation(matrix_path):
         release.set()
 
 
-def test_infeasible_search_emits_error_and_can_be_replaced(client):
+def test_infeasible_search_reports_error_and_can_be_replaced(client):
     run_id = client.post("/api/runs", json=request(budget_min=0.1)).json()["id"]
-    events = read_events(client, run_id)
-    assert events[-1]["event"] == "error" and "initial route" in events[-1]["message"]
+    outcome = wait_for_result(client, run_id)
+    assert outcome["status"] == "error" and "initial route" in outcome["message"]
+    assert outcome["result"] is None
     assert client.get(f"/api/runs/{run_id}/result").status_code == 409
     next_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
-    assert read_events(client, next_id)[-1]["event"] == "result"
+    assert wait_for_result(client, next_id)["status"] == "result"
 
 
 def test_bootstrap_defaults_and_local_assets(client):
@@ -287,17 +285,54 @@ def test_custom_matrix_with_only_h02_uses_distinct_defaults(matrix_path):
         assert defaults["start"] == "H02" and defaults["end"] != "H02"
 
 
-def test_dijkstra_expansion_snapshots_match_matrix_prefixes(client, matrix_path):
-    matrix = ODMatrix.from_csv(matrix_path)
-    run_id = client.post("/api/runs", json=request(algorithm="dijkstra")).json()["id"]
-    events = read_events(client, run_id)
-    expanded = [e for e in events if e.get("action") == "expand"]
-    assert expanded[0]["candidate"]["route"] == ["A"]
-    assert expanded[0]["candidate"]["duration_min"] == 0
-    assert [e["expanded"] for e in expanded] == list(range(1, len(expanded) + 1))
-    for event in expanded[1:]:
-        prefix = event["candidate"]
-        assert matrix.evaluate(prefix["route"], 480, 180).to_dict() == prefix
+@pytest.mark.parametrize("algorithm", ["alns", "vns", "aco", "dijkstra"])
+def test_worker_retains_only_one_terminal_message(matrix_path, monkeypatch, algorithm):
+    import queue
+
+    import Web.app as web_app
+
+    target = {
+        "alns": "ALNS",
+        "vns": "VNS",
+        "aco": "AntColony",
+        "dijkstra": "shortest_route",
+    }[algorithm]
+    original = getattr(web_app, target)
+    checkpoints = []
+
+    def wrapped(*args, **kwargs):
+        assert not kwargs.get("trace", False)
+        progress = kwargs["progress"]
+
+        def observed(event):
+            checkpoints.append(event["event"])
+            progress(event)
+
+        kwargs["progress"] = observed
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(web_app, target, wrapped)
+    output = queue.Queue()
+    search_worker(
+        str(matrix_path), request(algorithm=algorithm), output, threading.Event()
+    )
+    assert checkpoints
+    assert output.qsize() == 1
+    assert output.get()["status"] == "result"
+
+
+def test_final_only_browser_shell(client):
+    html = client.get("/").text
+    script = client.get("/assets/app.js").text
+    assert 'id="route-guide"' in html and 'id="guide-stops"' in html
+    for obsolete in [
+        'id="timeline"',
+        'id="inspector"',
+        'id="score-chart"',
+        'id="play"',
+    ]:
+        assert obsolete not in html
+    assert "EventSource" not in script and "requestAnimationFrame" not in script
 
 
 def test_openapi_exposes_all_solvers_and_typed_response_contracts(client):
