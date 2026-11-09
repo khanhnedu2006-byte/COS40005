@@ -59,7 +59,7 @@ DENSIFY_STEP_M = 20           # chèn điểm mỗi 20 m để kiểm tra vành 
 
 
 # ------------------------------------------------------------------ điểm
-def load_points():
+def load_points(include_test=False):
     # 50 POI từ configs/pois.py + hub (nếu đã có configs/hubs.py), mã hoá P001 / H01
     from pois import POIS
     points = [{"id": f"P{int(p['poi_id']):03d}", "type": "poi", "name": p["name"],
@@ -72,6 +72,12 @@ def load_points():
                     "score": 0.0} for h in HUBS]
     except ImportError:
         print("Chưa có configs/hubs.py → chỉ dùng POI")
+    if include_test:
+        # Điểm A/B kiểm tra (không phải POI/hub) → chặng của chúng ghi riêng ra test_legs.csv
+        from test_points import TEST_POINTS
+        points += [{"id": t["point_id"], "type": "point", "name": t["name"],
+                    "lat": float(t["coordinates"][0]), "lon": float(t["coordinates"][1]), "score": 0.0}
+                   for t in TEST_POINTS]
     return points
 
 
@@ -317,10 +323,17 @@ def ring_avoid_rects():
     return _RING_RECTS
 
 
+# Hướng xe (độ, 0 = Bắc, 90 = Đông) khi XUẤT PHÁT từ điểm này. Cầu Rồng: toạ độ ở đầu cầu phía Đông;
+# không khai hướng thì TomTom đặt xe trên làn đi về trung tâm → giờ cấm phải vòng ~30 km (09/11/2026).
+ORIGIN_HEADING = {"P001": 90}
+
+
 def call_tomtom(key, a, b, slot, travel_mode="bus", dims=None, avoid_ring=None, depart=None):
     dims = BUS_DIMENSIONS if dims is None else dims
     params = {"key": key, "travelMode": travel_mode, "traffic": "true", "routeType": "fastest",
               "departAt": depart or depart_time(slot), "maxAlternatives": "3", **dims}
+    if a.get("id") in ORIGIN_HEADING:
+        params["vehicleHeading"] = ORIGIN_HEADING[a["id"]]
     url = (f"https://api.tomtom.com/routing/1/calculateRoute/"
            f"{a['lat']},{a['lon']}:{b['lat']},{b['lon']}/json?" + urllib.parse.urlencode(params))
     # Trong giờ cấm: bảo TomTom tránh vành đai ngay khi tìm đường (POST + avoidAreas)
@@ -497,14 +510,17 @@ def validate(args):
 
 def fetch(args):
     cfg = PROVIDERS[args.provider]
-    points = load_points()
+    points = load_points(include_test=args.with_test_points)
     todo_all = jobs(points, args.provider)
     path = raw_file(args.provider)
     done = set()
     if path.exists():
         with open(path, encoding="utf-8") as f:
             done = {(r["from_id"], r["to_id"], r.get("slot")) for r in map(json.loads, f)}
-    todo = [j for j in todo_all if (j[0]["id"], j[1]["id"], j[2]) not in done]
+    redo = set(args.refetch_from.split(",")) if args.refetch_from else set()
+    todo = [j for j in todo_all if (j[0]["id"], j[1]["id"], j[2]) not in done or j[0]["id"] in redo]
+    if redo:
+        print(f"Lấy lại mọi chặng đi ra từ: {', '.join(sorted(redo))} (bản mới ghi sau, build giữ bản mới nhất)")
     bad = unstable_ids(points)
     # Ưu tiên cặp mà cả hai điểm đã chốt toạ độ
     todo.sort(key=lambda j: (j[0]["id"] in bad) + (j[1]["id"] in bad))
@@ -680,7 +696,7 @@ def endpoint_banned_ids(points):
 def build(args):
     # Đọc file thô TỪNG DÒNG (file TomTom ~430 MB, không nạp hết vào RAM); mỗi dòng = 1 cặp × 1 khung giờ
     # (Goong: 1 dòng dùng cho cả 5 khung giờ)
-    points = {p["id"]: p for p in load_points()}
+    points = {p["id"]: p for p in load_points(include_test=True)}
     geo = FastGeo(TIME_BANNED_AREAS[0]["polygon"], corridor_segments(),
                   [q for q in points.values() if q["type"] == "poi"])
     per_slot = PROVIDERS[args.provider]["per_slot"]
@@ -692,12 +708,31 @@ def build(args):
               "to_poi_score", "slot", "duration_s", "distance_m", "feasible", "pois_passed", "through_ring"]
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUT_FILE.with_suffix(".tmp")
+    test_file = OUT_FILE.with_name("test_legs.csv")          # chặng có điểm kiểm tra T01–T05
+    test_tmp = test_file.with_suffix(".tmp")
+    n_test = 0
     t0, n_rows, n_infeasible, seen = time.monotonic(), 0, 0, set()
+    # Lượt 1: tìm dòng cuối cùng của mỗi khoá (chạy lại / lấy lại → bản mới nhất thắng)
+    import re
+    key_re = re.compile(r'"from_id": "([^"]+)", "to_id": "([^"]+)", "slot": (null|"[^"]+")')
+    last = {}
+    with open(raw_file(args.provider), encoding="utf-8") as fin:
+        for line_no, line in enumerate(fin, 1):
+            m = key_re.search(line, 0, 200)
+            if m:
+                last[m.groups()] = line_no
+    keep = set(last.values())
+    print(f"File thô: {line_no} dòng, {len(keep)} khoá duy nhất (bỏ {line_no - len(keep)} bản cũ)")
     with open(raw_file(args.provider), encoding="utf-8") as fin, \
-            open(tmp, "w", newline="", encoding="utf-8-sig") as fout:
+            open(tmp, "w", newline="", encoding="utf-8-sig") as fout, \
+            open(test_tmp, "w", newline="", encoding="utf-8-sig") as ftest:
         w = csv.DictWriter(fout, fieldnames=fields)
         w.writeheader()
+        wt = csv.DictWriter(ftest, fieldnames=fields)
+        wt.writeheader()
         for line_no, line in enumerate(fin, 1):
+            if line_no not in keep:
+                continue
             r = json.loads(line)
             a, b = points.get(r["from_id"]), points.get(r["to_id"])
             if a is None or b is None:
@@ -710,7 +745,7 @@ def build(args):
             for slot in ([r["slot"]] if per_slot else list(TIME_SLOTS)):
                 key = (a["id"], b["id"], slot)
                 if key in seen:
-                    continue                           # bản ghi trùng (chạy lại) → giữ bản đầu
+                    continue                           # (đã lọc ở lượt 1, giữ để an toàn)
                 seen.add(key)
                 if banned_in(slot) and (a["id"] in deep or b["id"] in deep):
                     ok = []
@@ -719,7 +754,9 @@ def build(args):
                 best = ok[0] if ok else None
                 n_infeasible += best is None
                 mult = k.get(slot, 1.0) if not per_slot else scale
-                w.writerow({
+                is_test = "point" in (a["type"], b["type"])
+                n_test += is_test
+                (wt if is_test else w).writerow({
                     "from_id": a["id"], "to_id": b["id"], "from_type": a["type"], "to_type": b["type"],
                     "from_lat": a["lat"], "from_lon": a["lon"], "to_lat": b["lat"], "to_lon": b["lon"],
                     "to_poi_score": b["score"], "slot": slot,
@@ -734,7 +771,10 @@ def build(args):
                 rate = line_no / (time.monotonic() - t0)
                 print(f"  {line_no} dòng thô ({rate:.0f} dòng/s)")
     tmp.replace(OUT_FILE)
-    print(f"Đã ghi {OUT_FILE}: {n_rows} dòng, {n_infeasible} dòng không có tuyến hợp lệ "
+    test_tmp.replace(test_file)
+    if n_test:
+        print(f"Đã ghi {test_file}: {n_test} dòng có điểm kiểm tra")
+    print(f"Đã ghi {OUT_FILE}: {n_rows - n_test} dòng, {n_infeasible} dòng không có tuyến hợp lệ (cả file kiểm tra) "
           f"({time.monotonic() - t0:.0f}s, scale={scale})")
 
 
@@ -755,6 +795,9 @@ if __name__ == "__main__":
             sp.add_argument("--dry-run", action="store_true")
             sp.add_argument("--limit", type=int, default=0)
             sp.add_argument("--workers", type=int, default=4, help="số request gọi song song")
+            sp.add_argument("--refetch-from", default="", help="mã điểm (cách nhau bằng dấu phẩy): lấy lại chặng đi ra")
+            sp.add_argument("--with-test-points", action="store_true",
+                            help="thêm 5 điểm kiểm tra T01–T05 (configs/test_points.py)")
             sp.add_argument("--stable-only", action="store_true",
                             help="chỉ lấy cặp mà cả hai điểm đã chốt toạ độ")
     args = ap.parse_args()
