@@ -1,0 +1,16 @@
+﻿slot,group,n,mape,median_ape
+afternoon,hub,520,0.173,0.146
+afternoon,test_poi,490,0.198,0.15
+afternoon,train,1958,0.192,0.146
+ban_evening,hub,404,0.157,0.116
+ban_evening,test_poi,281,0.159,0.116
+ban_evening,train,1132,0.17,0.124
+ban_noon,hub,404,0.152,0.112
+ban_noon,test_poi,284,0.155,0.11
+ban_noon,train,1134,0.166,0.118
+morning,hub,520,0.182,0.158
+morning,test_poi,490,0.201,0.154
+morning,train,1958,0.197,0.151
+night,hub,520,0.174,0.154
+night,test_poi,490,0.193,0.144
+night,train,1958,0.189,0.14
