@@ -1,22 +1,35 @@
 # Data card – đồ thị đường cho RL (road_nodes / road_edges / pois)
 
 - Sinh ngày: 2026-11-10 · script: `scripts/build_road_graph.py` · kiểm tra: `scripts/check_road_graph.py`
-- `road_nodes.csv`: 38,058 nút (ngã tư / điểm cuối đường; `node_id`, `lat`, `lon`, `ring_deep`) · `road_edges.csv`: 86,156 đoạn có hướng, 19,188 km (`edge_id`, `from_node`, `to_node`, `size_level`, `time_<slot>` × 5, `ring_deep`, `pois_passed`; bảng đầy đủ có `length_m`, `road_class`, `lanes`, `name`… ở `data/interim/road_edges_full.csv`) · `pois.csv`: 50 POI (`point_id`, `name`, `score`)
+- `road_nodes.csv`: 37,750 nút (ngã tư / điểm cuối đường; `node_id`, `lat`, `lon`, `ring_deep`) · `road_edges.csv`: 84,919 đoạn có hướng, 19,080 km (`edge_id`, `from_node`, `to_node`, `size_level`, `width_m`, `time_<slot>` × 5, `ring_deep`, `pois_passed`; bảng đầy đủ có `length_m`, `road_class`, `lanes`, `name`… ở `data/interim/road_edges_full.csv`) · `pois.csv`: 50 POI (`point_id`, `name`, `score`)
 - Nguồn đường: OpenStreetMap (© OpenStreetMap contributors, ODbL), tải bằng OSMnx 21/10/2026, vùng [107.20, 14.95, 108.75, 16.25]; giữ thành phần liên thông mạnh lớn nhất.
 - Đường khu dân cư `residential`: chỉ giữ phố **có tên thật** (không phải "Kiệt / Hẻm / Ngõ / K12…") hoặc **≥ 2 làn** → mức `local`. Loại bỏ: residential không tên, kiệt / hẻm, `living_street`.
 - Xe chỉ **đi ngang** POI (không dừng đón trả): thưởng lấy qua `road_edges.pois_passed`. A, B (địa chỉ bất kỳ) gắn vào nút lúc chạy bằng `ABEstimator.snap()`.
 - Bảng phụ không dùng khi train: `data/interim/points_snap.csv` (toạ độ, nút gắn `node_id` / `node_id_ban`, `ring_deep` của 60 điểm) – cho kiểm tra và bản đồ.
 
+## Bề rộng mặt đường (`width_m`) – nguồn nhà nước
+
+- Nguồn: **Cổng Thông tin điện tử thành phố Đà Nẵng – CSDL đường phố** (https://danang.gov.vn/ttdt/csdl/duong-pho),
+  2.441 đoạn phố, cột "Chiều rộng mặt (m)". Lưu ở `data/references/danang_duong_pho.csv`. **Phải ghi nguồn khi dùng lại.**
+- Ghép theo tên đường (chuẩn hoá) trong vùng Đà Nẵng cũ; phố nhiều đoạn bề rộng khác nhau định vị theo 2 ngã giao
+  "điểm đầu – điểm cuối" (`scripts/street_width.py`). Khớp 2.038 / 2.197 tên phố.
+- "2 x 10,5" = 21 m (hai chiều tách riêng); "7,5 & 5,5" lấy phần rộng nhất.
+- **23.270 đoạn (2.256 km) có bề rộng thật**; còn lại (quốc lộ, đường tỉnh, Quảng Nam cũ, Hội An, phố chưa có trong danh
+  sách) để trống và xếp mức theo OSM.
+- **Bỏ hẳn 1.210 đoạn có mặt đường < 5 m** (xe 45 chỗ rộng 2,5 m không vào được).
+
 ## Mức đường (`size_level`)
 
-| Mức | Loại OSM `highway` | km | Gợi ý reward |
-|---|---|---|---|
-| big | motorway, trunk, primary (+ link) | 3,482 | không phạt |
-| medium | secondary, tertiary (+ link) | 6,833 | phạt nhẹ / km |
-| small | unclassified, road | 5,491 | phạt vừa / km |
-| local | residential có tên hoặc ≥ 2 làn | 3,382 | phạt nặng nhất / km |
+Có `width_m` → xếp theo mét; không có → theo loại đường OSM.
 
-Đoạn có `lanes` ≥ 4 được nâng một mức. OSM chỉ có `lanes` ở 3–69 % đoạn tùy loại, `width` gần như không có.
+| Mức | Theo bề rộng thật | Theo OSM `highway` (khi thiếu bề rộng) | km (thật + OSM) | Gợi ý reward |
+|---|---|---|---|---|
+| big | ≥ 14 m (15, 21, 30 m…) | motorway, trunk, primary (+ link) | 3,695 (601 + 3,095) | cộng nhiều |
+| medium | 9 – 14 m (10,5 m) | secondary, tertiary (+ link) | 6,710 (412 + 6,298) | cộng ít |
+| small | 7 – 9 m (7,5 m) | unclassified, road | 5,963 (502 + 5,461) | trừ |
+| local | 5 – 7 m (5,5 m) | residential có tên hoặc ≥ 2 làn | 2,713 (741 + 1,972) | trừ nặng |
+
+Đoạn không có bề rộng thật mà có `lanes` ≥ 4 được nâng một mức.
 
 ## Thời gian từng đoạn (`time_<slot>`, giây)
 
@@ -34,7 +47,7 @@ Không dùng giới hạn tốc độ (`maxspeed`): thử trên 2.970 chặng ch
 
 ## Luật vành đai
 
-- `ring_deep = 1` (2996 đoạn): trung điểm nằm sâu trong vành đai (cách mép > 25 m, ngoài trục Duy Tân) → **che** trong `ban_noon`, `ban_evening` (CV 4883/UBND-SGTVT 2019).
+- `ring_deep = 1` (2824 đoạn): trung điểm nằm sâu trong vành đai (cách mép > 25 m, ngoài trục Duy Tân) → **che** trong `ban_noon`, `ban_evening` (CV 4883/UBND-SGTVT 2019).
 - `corridor = 1` (144 đoạn): trục Duy Tân – Nguyễn Văn Trỗi – Trần Thị Lý, được đi trong giờ cấm (CV 1710/UBND-SGTVT 2022).
 - POI nằm trên đoạn `ring_deep` tự động không ăn điểm trong giờ cấm (đoạn đã bị che). A/B sâu trong vành đai: `ABEstimator` báo không hợp lệ trong giờ cấm.
 

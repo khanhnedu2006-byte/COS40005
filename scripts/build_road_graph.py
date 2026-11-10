@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "configs"))
 from busroute.graph.ab_estimator import ABEstimator, GROUP_OF, GROUPS, SLOTS  # noqa: E402
+from street_width import assign_widths  # noqa: E402
 from fetch_routes import (TIME_BANNED_AREAS, corridor_segments, load_points,  # noqa: E402
                           RING_EDGE_BAND_M, CORRIDOR_BAND_M, ENDPOINT_EDGE_OK_M, ENDPOINT_CORRIDOR_OK_M)
 
@@ -58,6 +59,14 @@ def keep_residential(name, lanes):
     w = name.lower().split()[0]
     return not (w in ALLEY_PREFIX or (w[0] == "k" and w[1:2].isdigit()))
 LANES_UPGRADE = 4
+# Bề rộng mặt đường thật (CSDL đường phố Đà Nẵng) → mức đường; hẹp hơn MIN_WIDTH_M thì xe 45 chỗ không vào
+MIN_WIDTH_M = 5.0
+WIDTH_LEVELS = [(14.0, "big"), (9.0, "medium"), (7.0, "small"), (0.0, "local")]
+
+
+def level_of_width(w):
+    # 15 m trở lên: lớn · 10,5 m: vừa · 7,5 m: nhỏ · 5,5 m: rất nhỏ
+    return next(lv for thr, lv in WIDTH_LEVELS if w >= thr)
 
 
 def first(v):
@@ -125,6 +134,16 @@ if __name__ == "__main__":
     osm_nodes, edges = read_graph()
     print(f"Đọc OSM: {len(edges)} đoạn đường xe 45 chỗ đi được ({time.time() - t0:.0f}s)")
 
+    # Bề rộng mặt đường thật từ CSDL đường phố Đà Nẵng; bỏ đoạn hẹp hơn MIN_WIDTH_M
+    all_ids = list(osm_nodes); aidx = {k: i for i, k in enumerate(all_ids)}
+    alat = np.array([osm_nodes[k][0] for k in all_ids]); alon = np.array([osm_nodes[k][1] for k in all_ids])
+    widths, wstats = assign_widths(edges, alat, alon, aidx)
+    for e, wd in zip(edges, widths):
+        e["width"] = wd
+    n_before = len(edges)
+    edges = [e for e in edges if e["width"] is None or e["width"] >= MIN_WIDTH_M]
+    print("Bề rộng mặt đường (CSDL Đà Nẵng):", wstats, f"| bỏ {n_before - len(edges)} đoạn hẹp < {MIN_WIDTH_M} m")
+
     # Giữ thành phần liên thông mạnh lớn nhất (không có ngõ cụt một chiều)
     ids = sorted({e["u"] for e in edges} | {e["v"] for e in edges})
     idx = {k: i for i, k in enumerate(ids)}
@@ -178,18 +197,22 @@ if __name__ == "__main__":
     # Thời gian từng đoạn theo khung giờ (giây) = chiều dài × giây/mét của nhóm đường
     params = json.loads((ROOT / "configs" / "estimator_params.json").read_text(encoding="utf-8"))
     OUT.mkdir(parents=True, exist_ok=True)
-    e_fields = ["edge_id", "from_node", "to_node", "length_m", "road_class", "size_level", "lanes", "maxspeed_kmh",
+    e_fields = ["edge_id", "from_node", "to_node", "length_m", "road_class", "size_level", "width_m", "lanes", "maxspeed_kmh",
                 "name", "ref", "bridge", "oneway"] + [f"time_{s}" for s in SLOTS] + \
                ["ring_deep", "corridor", "pois_passed", "osm_way_id"]
     pair = {(idx[e["u"]], idx[e["v"]]) for e in edges}
     rows = []
     for i, e in enumerate(edges):
-        size = SIZE_OF.get(e["highway"], "local")
-        if e["lanes"] and e["lanes"] >= LANES_UPGRADE:
-            size = UPGRADE[size]
+        if e["width"] is not None:                       # có bề rộng thật → xếp mức theo mét
+            size = level_of_width(e["width"])
+        else:                                            # không có → theo loại đường OSM (+ số làn)
+            size = SIZE_OF.get(e["highway"], "local")
+            if e["lanes"] and e["lanes"] >= LANES_UPGRADE:
+                size = UPGRADE[size]
         a, b = idx[e["u"]], idx[e["v"]]
         row = {"edge_id": i, "from_node": a, "to_node": b, "length_m": round(e["length_m"], 1),
-               "road_class": e["highway"], "size_level": size, "lanes": e["lanes"] or "",
+               "road_class": e["highway"], "size_level": size,
+               "width_m": e["width"] if e["width"] is not None else "", "lanes": e["lanes"] or "",
                "maxspeed_kmh": e["maxspeed"], "name": e["name"], "ref": e["ref"], "bridge": e["bridge"],
                "oneway": int((b, a) not in pair),
                "ring_deep": int(ring_deep[i]), "corridor": int(corr_d[i] <= CORRIDOR_BAND_M),
@@ -199,7 +222,7 @@ if __name__ == "__main__":
         rows.append(row)
     # road_edges.csv cho RL: chỉ cột env cần (đi đâu, mức đường cho reward, thời gian, luật giờ cấm, POI).
     # Bảng đầy đủ (chiều dài, tên đường, số làn, mã OSM…) ở data/interim/road_edges_full.csv cho kiểm tra / bản đồ.
-    rl_fields = ["edge_id", "from_node", "to_node", "size_level"] + [f"time_{s}" for s in SLOTS] + \
+    rl_fields = ["edge_id", "from_node", "to_node", "size_level", "width_m"] + [f"time_{s}" for s in SLOTS] + \
                 ["ring_deep", "pois_passed"]
     with open(OUT / "road_edges.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=rl_fields, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
