@@ -197,7 +197,13 @@ if __name__ == "__main__":
         for s in SLOTS:
             row[f"time_{s}"] = round(e["length_m"] * params["s_per_m"][s][GROUP_OF[e["highway"]]], 1)
         rows.append(row)
+    # road_edges.csv cho RL: chỉ cột env cần (đi đâu, mức đường cho reward, thời gian, luật giờ cấm, POI).
+    # Bảng đầy đủ (chiều dài, tên đường, số làn, mã OSM…) ở data/interim/road_edges_full.csv cho kiểm tra / bản đồ.
+    rl_fields = ["edge_id", "from_node", "to_node", "size_level"] + [f"time_{s}" for s in SLOTS] + \
+                ["ring_deep", "pois_passed"]
     with open(OUT / "road_edges.csv", "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=rl_fields, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
+    with open(SNAP.parent / "road_edges_full.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=e_fields); w.writeheader(); w.writerows(rows)
 
     # Nút: chỉ giữ cột RL cần (mã, toạ độ, cờ sâu trong vành đai cho A/B giờ cấm).

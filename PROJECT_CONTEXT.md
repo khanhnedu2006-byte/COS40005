@@ -118,21 +118,28 @@ build_gps_trips.py ─► fetch_routes.py validate ─► reports/gps_validation
 
 ---
 
-## 6. Môi trường RL (PPO + GNN)
+## 6. Môi trường RL – dò đường từng ngã rẽ (chốt 10/11/2026)
 
-- **State:** điểm hiện tại, giờ hiện tại và khung giờ, thời gian còn lại, các POI đã đi qua. Thêm embedding GNN của 55 nút; đặc trưng của mỗi nút gồm toạ độ, điểm POI, đã đi qua chưa, và thời gian ngắn nhất về B.
-- **Action:** chọn điểm tiếp theo. Bị che (mask) khi:
-  - `feasible = 0` trong khung giờ hiện tại;
-  - POI đã đi qua rồi;
-  - `duration_s(i→j) + T_B(j)` lớn hơn thời gian còn lại.
-- **Reward:**
-  - `+score` của điểm đến;
-  - `+score` của các POI trong `pois_passed`, mỗi POI chỉ tính lần đầu;
-  - phạt nhỏ theo thời gian;
-  - thưởng khi tới B.
-  - Gợi ý: đưa `score` về thang 1–10 bằng min–max, vì điểm Bayes chỉ nằm trong khoảng 3,97–4,54.
-- **Train:** sinh ngẫu nhiên A, B (trong số hub), giờ xuất phát và ngân sách.
-- **Baseline:** greedy (điểm/phút) và đường ngắn nhất A→B.
+Dữ liệu: `data/final/road_nodes.csv`, `road_edges.csv`, `pois.csv` (xem `road_graph_card.md`).
+**Mục tiêu bài toán: tối đa tổng điểm POI đi ngang trên tuyến A → B trong thời gian C. Tuyến dài không sao.**
+Xe chỉ ĐI NGANG POI, không dừng đón trả.
+
+- **State:** nút hiện tại, B, khung giờ, thời gian còn lại, các nút / POI đã đi qua.
+- **Action:** chọn đoạn đi ra từ nút hiện tại (tối đa 5 ngả). Bị che (mask) khi:
+  - khung giờ cấm (`ban_noon`, `ban_evening`) và đoạn có `ring_deep = 1`;
+  - thời gian đã dùng + `time_<slot>` vượt C.
+- **Có HAI loại điểm, tách riêng – KHÔNG gộp:**
+  1. **Reward đường đi (để RL học dò đường):** tính **theo từng bước (mỗi nút / mỗi đoạn đi qua)**, không theo km,
+     theo `size_level` của đoạn: đường to **cộng**, đường hẹp **trừ nặng** (big > medium > small > local).
+     POI KHÔNG nằm trong reward này.
+  2. **Điểm POI (để chọn tuyến):** tổng `score` (pois.csv) của các POI trong `pois_passed` dọc tuyến, mỗi POI tính
+     một lần. Dùng để so sánh và CHỌN tuyến, không dùng để dạy rẽ.
+- **Quy trình:** model dò A → B; tới B thì dò lại từ đầu nhiều lần để tìm tuyến tốt hơn; tuyến được chọn = tuyến tới
+  B trong C có tổng điểm POI cao nhất.
+- **Lưu ý cho người viết env:** đường to luôn được cộng nên model có thể chạy vòng gom điểm → C chặn; có thể cần thêm
+  thưởng khi tới B / không cho quay lại nút cũ. POI chỉ dùng để chọn tuyến → các lần dò lại cần đủ ngẫu nhiên.
+- **Train:** A, B ngẫu nhiên (địa chỉ bất kỳ, gắn nút bằng `ABEstimator.snap()`), giờ xuất phát, ngân sách C.
+- **Baseline:** đường nhanh nhất A → B (Dijkstra trên `time_<slot>`).
 
 ---
 

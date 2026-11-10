@@ -1,7 +1,7 @@
 # Data card – đồ thị đường cho RL (road_nodes / road_edges / pois)
 
 - Sinh ngày: 2026-11-10 · script: `scripts/build_road_graph.py` · kiểm tra: `scripts/check_road_graph.py`
-- `road_nodes.csv`: 38,058 nút (ngã tư / điểm cuối đường; `node_id`, `lat`, `lon`, `ring_deep`) · `road_edges.csv`: 86,156 đoạn có hướng, 19,188 km · `pois.csv`: 50 POI (`point_id`, `name`, `score`)
+- `road_nodes.csv`: 38,058 nút (ngã tư / điểm cuối đường; `node_id`, `lat`, `lon`, `ring_deep`) · `road_edges.csv`: 86,156 đoạn có hướng, 19,188 km (`edge_id`, `from_node`, `to_node`, `size_level`, `time_<slot>` × 5, `ring_deep`, `pois_passed`; bảng đầy đủ có `length_m`, `road_class`, `lanes`, `name`… ở `data/interim/road_edges_full.csv`) · `pois.csv`: 50 POI (`point_id`, `name`, `score`)
 - Nguồn đường: OpenStreetMap (© OpenStreetMap contributors, ODbL), tải bằng OSMnx 21/10/2026, vùng [107.20, 14.95, 108.75, 16.25]; giữ thành phần liên thông mạnh lớn nhất.
 - Đường khu dân cư `residential`: chỉ giữ phố **có tên thật** (không phải "Kiệt / Hẻm / Ngõ / K12…") hoặc **≥ 2 làn** → mức `local`. Loại bỏ: residential không tên, kiệt / hẻm, `living_street`.
 - Xe chỉ **đi ngang** POI (không dừng đón trả): thưởng lấy qua `road_edges.pois_passed`. A, B (địa chỉ bất kỳ) gắn vào nút lúc chạy bằng `ABEstimator.snap()`.

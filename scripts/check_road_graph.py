@@ -21,7 +21,7 @@ BAN = {"ban_noon", "ban_evening"}
 
 if __name__ == "__main__":
     nodes = pd.read_csv(F / "road_nodes.csv", encoding="utf-8-sig", keep_default_na=False)
-    edges = pd.read_csv(F / "road_edges.csv", encoding="utf-8-sig", keep_default_na=False)
+    edges = pd.read_csv(ROOT / "data" / "interim" / "road_edges_full.csv", encoding="utf-8-sig", keep_default_na=False)
     pts = pd.read_csv(ROOT / "data" / "interim" / "points_snap.csv", encoding="utf-8-sig", keep_default_na=False).set_index("point_id")
     tt = pd.concat([pd.read_csv(F / f, encoding="utf-8-sig", keep_default_na=False) for f in ("od_matrix.csv", "test_legs.csv")])
     n = len(nodes)
