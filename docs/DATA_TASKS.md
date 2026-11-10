@@ -90,3 +90,18 @@ Bài toán gốc: người dùng gõ địa chỉ A, B bất kỳ. `od_matrix.cs
 | `src/busroute/graph/ab_estimator.py`: thời gian A/B bất kỳ trên đồ thị OSM, hiệu chỉnh theo TomTom (`scripts/calibrate_estimator.py`) | ✅ sai số 15–18 % trên hub, khớp feasible 97,5–99,9 % |
 | 5 điểm kiểm tra T01–T05 (`configs/test_points.py`) → `data/final/test_legs.csv` (`fetch --with-test-points`, ~2.850 lượt) | ⏳ chờ chạy |
 | Đặc tả train / kiểm tra / demo cho A/B bất kỳ: `docs/AB_ROUTING.md` | ✅ |
+
+
+## 8. Cập nhật 10/11/2026 – dataset ĐỒ THỊ ĐƯỜNG để RL tự chọn đường từng ngã rẽ
+
+Nhóm chọn cho RL tự học đường đi (không đưa sẵn đường nhanh nhất). Dataset mới (`data/final/road_graph_card.md`):
+
+| File | Nội dung |
+|---|---|
+| `pois.csv` | 60 điểm (50 POI + 5 hub + 5 điểm kiểm tra): điểm số, nút gắn (`node_id`, giờ cấm `node_id_ban`) |
+| `road_nodes.csv` | 27.297 ngã tư (OSM), cờ sâu trong vành đai, POI lân cận |
+| `road_edges.csv` | 54.655 đoạn có hướng: chiều dài, loại đường, `size_level` big/medium/small, số làn, `time_<slot>` × 5, `ring_deep`, `corridor`, `pois_passed` |
+
+- Bỏ đường dân sinh / kiệt hẻm. Thời gian đoạn = chiều dài × tốc độ hiệu chỉnh từ TomTom (không dùng maxspeed: sai 61 %).
+- Kiểm chứng: đường nhanh nhất trên đồ thị lệch TomTom 13–15 % (điểm kiểm tra), 18–21 % (POI); khớp đi được 98–100 %.
+- `od_matrix.csv` / `test_legs.csv` giữ làm chuẩn so sánh.
