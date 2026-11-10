@@ -1,5 +1,7 @@
 # Architecture – COS40005
 
+> ⚠️ **Bản kiến trúc cũ (19/10/2026)** – pipeline maxspeed / `build_graph.py` đã bị thay bằng dataset đồ thị đường (`scripts/build_road_graph.py`, xem `README.md` và `PROJECT_CONTEXT.md` §6). Các module `graph/poi_snap.py`, `travel_time.py`, `restrictions.py`, `connectivity.py`, `export.py`, `config/roads.py`, `speeds.py`, `viz/route_map.py` đã xoá ngày 10/11/2026.
+
 > Đọc cùng `PROJECT_CONTEXT.md`. File này mô tả **các lớp của hệ thống**, **luồng dữ liệu** và **source code nằm ở đâu**.
 
 ## 1. Sơ đồ tổng thể

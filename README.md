@@ -15,14 +15,17 @@ pip install -e .
 
 ## Run the pipeline
 ```bash
-python scripts/normalize_dataset.py --src <raw exports> --out dataset     # Step 0: unify raw exports
-python scripts/run_clean_gps.py --src dataset --out data/interim/gps   # Step 1
-python scripts/build_graph.py   --out data/processed                       # Steps 2–6
-python scripts/train_ppo.py     --graph data/processed                     # Routing (PPO + GNN)
+python scripts/stage1_build_base.py                                        # OSM base map → data/stage1, data/cache/road_graph_drive.graphml
+python scripts/fetch_routes.py fetch && python scripts/fetch_routes.py build   # TomTom durations → data/final/od_matrix.csv, test_legs.csv (needs .env key)
+python scripts/calibrate_estimator.py                                      # Fit speed per road group × slot → configs/estimator_params.json
+python scripts/build_road_graph.py                                         # RL dataset → data/final/{pois,road_nodes,road_edges}.csv
+python scripts/check_road_graph.py                                         # Validate against TomTom → reports/road_graph_validation.csv
 pytest                                                                     # Tests
 ```
+RL dataset description: [`data/final/README.md`](data/final/README.md), details in [`data/final/road_graph_card.md`](data/final/road_graph_card.md).
+GPS logs (`scripts/normalize_dataset.py`, `scripts/run_clean_gps.py`, `scripts/build_gps_trips.py`) are only used to check TomTom times.
 
 ## Conventions
 - Variable / function / file names in **English**.
-- All bus restrictions are **hard-coded** in `src/busroute/config/` – OSM is used only as the base map.
+- Central-ring ban is hard-coded in `src/busroute/config/restrictions.py` + `data/references/central_ring.geojson`; road width from `data/references/danang_duong_pho.csv` (source: Da Nang City portal, danang.gov.vn).
 - Never commit raw GPS logs or any driver video (see `.gitignore`).

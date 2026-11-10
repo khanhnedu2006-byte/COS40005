@@ -95,7 +95,7 @@ if __name__ == "__main__":
     results, ids, dead = run_checks(df)
     for name, ok, d in results:
         print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f" – {d}" if d else ""))
-    card = Path(args.file).with_name("data_card.md" if "mock" not in args.file else "data_card_mock.md")
+    card = Path(args.file).with_name("data_card.md")
     write_card(df, ids, dead, results, card, Path(args.file).name)
     failed = [r for r in results if not r[1]]
     print(f"\n{len(results) - len(failed)}/{len(results)} đạt · data card: {card}")
