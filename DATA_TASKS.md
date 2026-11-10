@@ -98,10 +98,13 @@ Nhóm chọn cho RL tự học đường đi (không đưa sẵn đường nhanh
 
 | File | Nội dung |
 |---|---|
-| `pois.csv` | 60 điểm (50 POI + 5 hub + 5 điểm kiểm tra): điểm số, nút gắn (`node_id`, giờ cấm `node_id_ban`) |
-| `road_nodes.csv` | 27.297 ngã tư (OSM), cờ sâu trong vành đai, POI lân cận |
-| `road_edges.csv` | 54.655 đoạn có hướng: chiều dài, loại đường, `size_level` big/medium/small, số làn, `time_<slot>` × 5, `ring_deep`, `corridor`, `pois_passed` |
+| `pois.csv` | 50 POI: `point_id`, `name`, `score`. Xe chỉ **đi ngang** POI (không dừng) → thưởng lấy qua `road_edges.pois_passed` |
+| `road_nodes.csv` | 38.058 ngã tư (OSM), cờ sâu trong vành đai, POI lân cận |
+| `road_edges.csv` | 86.156 đoạn có hướng: chiều dài, loại đường, `size_level` big/medium/small/local, số làn, `time_<slot>` × 5, `ring_deep`, `corridor`, `pois_passed` |
 
-- Bỏ đường dân sinh / kiệt hẻm. Thời gian đoạn = chiều dài × tốc độ hiệu chỉnh từ TomTom (không dùng maxspeed: sai 61 %).
-- Kiểm chứng: đường nhanh nhất trên đồ thị lệch TomTom 13–15 % (điểm kiểm tra), 18–21 % (POI); khớp đi được 98–100 %.
+- Đường khu dân cư (`residential`): chỉ giữ phố có tên thật hoặc ≥ 2 làn → mức `local` (phạt nặng nhất); bỏ kiệt / hẻm / ngõ.
+- Thời gian đoạn = chiều dài × tốc độ hiệu chỉnh từ TomTom (không dùng maxspeed: sai 61 %).
+- Đi ngang POI: đoạn cách POI ≤ 100 m; POI khuôn viên rộng / lùi sâu nới tới đoạn gần nhất + 20 m (≤ 250 m) → cả 50 POI đều có đường đi ngang.
+- A, B: địa chỉ bất kỳ, gắn vào nút lúc chạy (`ABEstimator.snap()`). Nút gắn của POI / hub / điểm kiểm tra chỉ còn ở `data/interim/points_snap.csv` (kiểm tra, bản đồ).
+- Kiểm chứng: đường nhanh nhất trên đồ thị lệch TomTom 12–15 % (điểm kiểm tra), 16–20 % (POI, tỉ lệ ≈ 0,97); khớp đi được 98–100 %.
 - `od_matrix.csv` / `test_legs.csv` giữ làm chuẩn so sánh.

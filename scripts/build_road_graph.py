@@ -8,8 +8,10 @@ Nguồn:
   - Thời gian từng đoạn × 5 khung giờ: chiều dài × giây/mét của nhóm đường, hiệu chỉnh cho khớp
     14.850 thời gian TomTom (configs/estimator_params.json, scripts/calibrate_estimator.py).
   - Vành đai: data/references/central_ring.geojson (CV 4883/2019) + trục Duy Tân (CV 1710/2022).
-Đường dân sinh / kiệt hẻm (residential, living_street) KHÔNG có trong đồ thị: xe 45 chỗ không vào.
-POI, A, B gắn vào nút gần nhất trên đường còn lại (xe chạy ngang trên đường lớn gần đó).
+Đường khu dân cư (residential): CHỈ giữ phố có tên hoặc ≥ 2 làn → mức "local" (rất nhỏ, nên phạt nặng);
+kiệt / hẻm / ngõ và living_street KHÔNG có trong đồ thị: xe 45 chỗ không vào.
+Xe chỉ đi ngang POI (không dừng): pois.csv chỉ có mã, tên, điểm; thưởng qua road_edges.pois_passed.
+A, B (địa chỉ bất kỳ) gắn vào nút lúc chạy bằng ABEstimator.snap().
 """
 import csv
 import json
@@ -33,14 +35,28 @@ from fetch_routes import (TIME_BANNED_AREAS, corridor_segments, load_points,  # 
 
 GRAPHML = ROOT / "data" / "cache" / "road_graph_drive.graphml"
 OUT = ROOT / "data" / "final"
+SNAP = ROOT / "data" / "interim" / "points_snap.csv"
 NS = "{http://graphml.graphdrawing.org/xmlns}"
-PASS_RADIUS_M = 100
-# Mức đường cho xe 45 chỗ (residential / living_street bị loại hẳn)
+PASS_RADIUS_M = 100          # bán kính "đi ngang" mặc định
+PASS_SLACK_M, PASS_MAX_M = 20, 250   # POI rộng / lùi xa đường: nới tới (đoạn gần nhất + 20 m), tối đa 250 m
+# Mức đường cho xe 45 chỗ (residential xét riêng ở keep_residential; living_street bị loại hẳn)
 SIZE_OF = {"motorway": "big", "motorway_link": "big", "trunk": "big", "trunk_link": "big",
            "primary": "big", "primary_link": "big",
            "secondary": "medium", "secondary_link": "medium", "tertiary": "medium", "tertiary_link": "medium",
            "unclassified": "small", "road": "small"}
-UPGRADE = {"small": "medium", "medium": "big", "big": "big"}
+UPGRADE = {"local": "small", "small": "medium", "medium": "big", "big": "big"}
+SIZE_LEVELS = ("big", "medium", "small", "local")
+ALLEY_PREFIX = ("kiệt", "hẻm", "ngõ", "ngách", "k")
+
+
+def keep_residential(name, lanes):
+    # Phố khu dân cư xe khách đi được: có tên đường thật (không phải kiệt/hẻm) hoặc ≥ 2 làn
+    if lanes and lanes >= 2:
+        return True
+    if not name:
+        return False
+    w = name.lower().split()[0]
+    return not (w in ALLEY_PREFIX or (w[0] == "k" and w[1:2].isdigit()))
 LANES_UPGRADE = 4
 
 
@@ -67,7 +83,7 @@ def read_graph():
         elif tag == "edge":
             d = {keys[c.get("key")]: c.text for c in el}
             hw = first(d.get("highway"))
-            if hw in SIZE_OF:
+            if hw in SIZE_OF or hw == "residential":
                 u, v = el.get("source"), el.get("target")
                 if "geometry" in d:
                     g = d["geometry"]
@@ -79,6 +95,9 @@ def read_graph():
                     lanes = int(float(lanes)) if lanes else None
                 except ValueError:
                     lanes = None
+                if hw == "residential" and not keep_residential(first(d.get("name")), lanes):
+                    el.clear()
+                    continue
                 maxspeed = first(d.get("maxspeed"))
                 edges.append({"u": u, "v": v, "highway": hw, "name": first(d.get("name")) or "",
                               "ref": first(d.get("ref")) or "", "length_m": float(d.get("length") or 0),
@@ -132,16 +151,29 @@ if __name__ == "__main__":
     corr_d = helper.dist_to_segs(mids, helper.corr[:, 0], helper.corr[:, 1])
     node_deep = helper.deep_in_ring(np.column_stack([lat, lon]), ENDPOINT_EDGE_OK_M, ENDPOINT_CORRIDOR_OK_M)
 
-    # POI nằm sát đoạn (≤ 100 m theo hình dạng thật của đoạn)
+    # POI "được đi ngang" khi đoạn cách POI ≤ bán kính (theo hình dạng thật của đoạn).
+    # Bán kính mặc định 100 m; POI không có đoạn nào trong 100 m (khuôn viên rộng, lùi sâu) thì nới
+    # tới khoảng cách đoạn gần nhất + 20 m, tối đa 250 m → POI nào cũng có đường đi ngang.
     pois = [p for p in load_points() if p["type"] == "poi"]
     poi_xy = np.array([[p["lat"], p["lon"]] for p in pois])
-    near = [[] for _ in edges]
+    cand = []                                           # (chỉ số đoạn, chỉ số POI, khoảng cách)
     for i, e in enumerate(edges):
         c = np.array(e["coords"])
-        box = (np.abs(poi_xy[:, 0] - c[:, 0].mean()) < 0.02) & (np.abs(poi_xy[:, 1] - c[:, 1].mean()) < 0.02)
-        if box.any() and len(c) > 1:
+        box = np.where((np.abs(poi_xy[:, 0] - c[:, 0].mean()) < 0.03) & (np.abs(poi_xy[:, 1] - c[:, 1].mean()) < 0.03))[0]
+        if len(box) and len(c) > 1:
             d = seg_dist(poi_xy[box], c[:-1], c[1:]).min(axis=1)
-            near[i] = [p["id"] for p, dd in zip(np.array(pois)[box], d) if dd <= PASS_RADIUS_M]
+            cand += [(i, j, dd) for j, dd in zip(box, d) if dd <= PASS_MAX_M]
+    best = np.full(len(pois), np.inf)
+    for _, j, dd in cand:
+        best[j] = min(best[j], dd)
+    radius = np.clip(best + PASS_SLACK_M, PASS_RADIUS_M, PASS_MAX_M)
+    near = [[] for _ in edges]
+    for i, j, dd in sorted(cand):
+        if dd <= radius[j]:
+            near[i].append(pois[j]["id"])
+    wide = [(pois[j]["id"], int(radius[j])) for j in range(len(pois)) if radius[j] > PASS_RADIUS_M]
+    print("POI nới bán kính đi ngang (m):", wide)
+    print("POI không có đường nào trong 250 m:", [pois[j]["id"] for j in range(len(pois)) if not np.isfinite(best[j])])
 
     # Thời gian từng đoạn theo khung giờ (giây) = chiều dài × giây/mét của nhóm đường
     params = json.loads((ROOT / "configs" / "estimator_params.json").read_text(encoding="utf-8"))
@@ -152,7 +184,7 @@ if __name__ == "__main__":
     pair = {(idx[e["u"]], idx[e["v"]]) for e in edges}
     rows = []
     for i, e in enumerate(edges):
-        size = SIZE_OF[e["highway"]]
+        size = SIZE_OF.get(e["highway"], "local")
         if e["lanes"] and e["lanes"] >= LANES_UPGRADE:
             size = UPGRADE[size]
         a, b = idx[e["u"]], idx[e["v"]]
@@ -184,11 +216,21 @@ if __name__ == "__main__":
             w.writerow([i, k, round(lat[i], 7), round(lon[i], 7), deg_out[i], deg_in[i], int(node_deep[i]),
                         ";".join(near_node[i])])
 
-    # POI + ví dụ A/B (hub, điểm kiểm tra): gắn vào nút gần nhất
+    # pois.csv cho RL: xe chỉ ĐI NGANG POI (không dừng) → chỉ cần mã + điểm; thưởng lấy qua
+    # road_edges.pois_passed. Tên giữ lại cho người đọc.
+    with open(OUT / "pois.csv", "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["point_id", "name", "score"])
+        for p in pois:
+            w.writerow([p["id"], p["name"], p["score"]])
+
+    # Bảng phụ (không dùng khi train): toạ độ + nút gắn của POI, hub, điểm kiểm tra
+    # → cho scripts/check_road_graph.py và bản đồ minh hoạ
     allpts = load_points(include_test=True)
     from pois import POIS
     meta = {f"P{p['poi_id']:03d}": p for p in POIS}
-    with open(OUT / "pois.csv", "w", newline="", encoding="utf-8-sig") as f:
+    SNAP.parent.mkdir(parents=True, exist_ok=True)
+    with open(SNAP, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         # Giờ cấm: chỉ gắn vào nút còn cả đoạn VÀO lẫn đoạn RA không nằm sâu trong vành đai
         ok_out = np.zeros(len(ids), bool); ok_in = np.zeros(len(ids), bool)
@@ -207,7 +249,8 @@ if __name__ == "__main__":
             w.writerow([p["id"], p["type"], p["name"], meta.get(p["id"], {}).get("category", ""),
                         p["lat"], p["lon"], p["score"], n, round(float(d[n]), 1),
                         nb, round(float(d[nb]), 1), int(deep)])
-    print(f"Đã ghi road_edges.csv ({len(rows)}), road_nodes.csv ({len(ids)}), pois.csv ({len(allpts)}) "
+    print(f"Đã ghi road_edges.csv ({len(rows)}), road_nodes.csv ({len(ids)}), pois.csv ({len(pois)}), "
+          f"interim/points_snap.csv ({len(allpts)}) "
           f"– {time.time() - t0:.0f}s")
     print("Mức đường (km):", {s: round(sum(r['length_m'] for r in rows if r['size_level'] == s) / 1000)
-                             for s in ("big", "medium", "small")})
+                             for s in SIZE_LEVELS})
