@@ -99,8 +99,8 @@ Nhóm chọn cho RL tự học đường đi (không đưa sẵn đường nhanh
 | File | Nội dung |
 |---|---|
 | `pois.csv` | 50 POI: `point_id`, `name`, `score`. Xe chỉ **đi ngang** POI (không dừng) → thưởng lấy qua `road_edges.pois_passed` |
-| `road_nodes.csv` | 37.750 ngã tư (OSM): `node_id`, `lat`, `lon`, `ring_deep` (A/B sâu trong vành đai → không hợp lệ giờ cấm) |
-| `road_edges.csv` | 84.919 đoạn có hướng: `edge_id`, `from_node`, `to_node`, `size_level` big/medium/small/local (reward đường đi), `width_m` (bề rộng mặt đường thật – CSDL đường phố Đà Nẵng, 2.256 km), `time_<slot>` × 5, `ring_deep` (che giờ cấm), `pois_passed` (điểm POI). Bảng đầy đủ: `data/interim/road_edges_full.csv` |
+| `road_nodes.csv` | 37.713 ngã tư (OSM): `node_id`, `lat`, `lon`, `ring_deep` (A/B sâu trong vành đai → không hợp lệ giờ cấm) |
+| `road_edges.csv` | 84.766 đoạn có hướng: `edge_id`, `from_node`, `to_node`, `size_level` big/medium/small/local (reward đường đi), `width_m` (bề rộng mặt đường thật – CSDL đường phố Đà Nẵng, 2.244 km; ô ghi nhiều số lấy số nhỏ nhất), `time_<slot>` × 5, `ring_deep` (che giờ cấm), `pois_passed` (điểm POI). Bảng đầy đủ: `data/interim/road_edges_full.csv` |
 
 - Đường khu dân cư (`residential`): chỉ giữ phố có tên thật hoặc ≥ 2 làn; bỏ kiệt / hẻm / ngõ.
 - Bề rộng mặt đường thật từ CSDL đường phố danang.gov.vn (`scripts/street_width.py`): có bề rộng thì xếp mức theo mét (≥ 14 lớn, 9–14 vừa, 7–9 nhỏ, 5–7 rất nhỏ), bỏ đoạn < 5 m.

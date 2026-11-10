@@ -8,7 +8,9 @@ Cách ghép:
   1. Chuẩn hoá tên đường (bỏ "Đường", ghi chú trong ngoặc, thống nhất dấu thanh hoà/hòa…).
   2. Chỉ ghép đoạn OSM nằm trong vùng Đà Nẵng cũ (danh sách chỉ có phố Đà Nẵng cũ, tránh trùng tên
      với Quảng Nam cũ / Hội An).
-  3. Tên có nhiều đoạn với bề rộng khác nhau: tìm 2 ngã giao với phố "điểm đầu" và "điểm cuối" trên OSM,
+  3. Ô ghi nhiều bề rộng ("7,5 & 5,5": tuyến có đoạn rộng đoạn hẹp) → lấy số NHỎ NHẤT cho chắc xe 45 chỗ
+     qua được; "2 x 10,5" (hai chiều có dải phân cách) → cộng lại 21 m.
+  4. Tên có nhiều đoạn với bề rộng khác nhau: tìm 2 ngã giao với phố "điểm đầu" và "điểm cuối" trên OSM,
      đoạn OSM nằm giữa 2 ngã giao nhận bề rộng của đoạn đó; phần còn lại nhận bề rộng của đoạn dài nhất.
 """
 import csv
@@ -87,7 +89,7 @@ def load_records():
 
 def assign_widths(edges, lat, lon, idx):
     """edges: list dict có 'name','u','v' (mã OSM); lat/lon theo chỉ số nút; idx: mã OSM → chỉ số.
-    Trả về list (w_max hoặc None) theo thứ tự edges và thống kê."""
+    Trả về list (bề rộng nhỏ nhất hoặc None) theo thứ tự edges và thống kê."""
     recs = load_records()
     by_key = defaultdict(list)
     for r in recs:
@@ -112,12 +114,12 @@ def assign_widths(edges, lat, lon, idx):
     n_seg_matched = 0
     for k, ids in edges_of.items():
         rs = by_key[k]
-        if len({r["w_max"] for r in rs}) == 1:
+        if len({r["w_min"] for r in rs}) == 1:
             for i in ids:
-                out[i] = rs[0]["w_max"]
+                out[i] = rs[0]["w_min"]
             continue
         # nhiều đoạn bề rộng khác nhau → định vị theo 2 ngã giao
-        default = max(rs, key=lambda r: r["len_km"])["w_max"]
+        default = max(rs, key=lambda r: r["len_km"])["w_min"]
         for i in ids:
             out[i] = default
         street_nodes = nodes_of[k]
@@ -141,7 +143,7 @@ def assign_widths(edges, lat, lon, idx):
                 t = float(m @ d) / L2
                 off = abs(m[0] * d[1] - m[1] * d[0]) / np.sqrt(L2) * 111000
                 if 0 <= t <= 1 and off < 150:
-                    out[i] = r["w_max"]
+                    out[i] = r["w_min"]
             n_seg_matched += 1
     stats = {"records": len(recs), "street_names": len(by_key),
              "names_matched": len(edges_of), "segments_located": n_seg_matched,
