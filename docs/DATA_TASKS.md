@@ -99,7 +99,7 @@ Nhóm chọn cho RL tự học đường đi (không đưa sẵn đường nhanh
 | File | Nội dung |
 |---|---|
 | `pois.csv` | 50 POI: `point_id`, `name`, `score`. Xe chỉ **đi ngang** POI (không dừng) → thưởng lấy qua `road_edges.pois_passed` |
-| `road_nodes.csv` | 38.058 ngã tư (OSM), cờ sâu trong vành đai, POI lân cận |
+| `road_nodes.csv` | 38.058 ngã tư (OSM): `node_id`, `lat`, `lon`, `ring_deep` (A/B sâu trong vành đai → không hợp lệ giờ cấm) |
 | `road_edges.csv` | 86.156 đoạn có hướng: chiều dài, loại đường, `size_level` big/medium/small/local, số làn, `time_<slot>` × 5, `ring_deep`, `corridor`, `pois_passed` |
 
 - Đường khu dân cư (`residential`): chỉ giữ phố có tên thật hoặc ≥ 2 làn → mức `local` (phạt nặng nhất); bỏ kiệt / hẻm / ngõ.

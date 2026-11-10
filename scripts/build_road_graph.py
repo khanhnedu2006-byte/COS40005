@@ -200,21 +200,13 @@ if __name__ == "__main__":
     with open(OUT / "road_edges.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=e_fields); w.writeheader(); w.writerows(rows)
 
-    # Nút
-    near_node = [[] for _ in ids]
-    for r in rows:
-        for pid in filter(None, r["pois_passed"].split(";")):
-            for n in (r["from_node"], r["to_node"]):
-                if pid not in near_node[n]:
-                    near_node[n].append(pid)
-    deg_out = np.bincount([r["from_node"] for r in rows], minlength=len(ids))
-    deg_in = np.bincount([r["to_node"] for r in rows], minlength=len(ids))
+    # Nút: chỉ giữ cột RL cần (mã, toạ độ, cờ sâu trong vành đai cho A/B giờ cấm).
+    # Số ngả ra / vào và POI lân cận đếm lại được từ road_edges.csv nên không ghi.
     with open(OUT / "road_nodes.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["node_id", "osm_node_id", "lat", "lon", "out_degree", "in_degree", "ring_deep", "near_pois"])
-        for i, k in enumerate(ids):
-            w.writerow([i, k, round(lat[i], 7), round(lon[i], 7), deg_out[i], deg_in[i], int(node_deep[i]),
-                        ";".join(near_node[i])])
+        w.writerow(["node_id", "lat", "lon", "ring_deep"])
+        for i in range(len(ids)):
+            w.writerow([i, round(lat[i], 7), round(lon[i], 7), int(node_deep[i])])
 
     # pois.csv cho RL: xe chỉ ĐI NGANG POI (không dừng) → chỉ cần mã + điểm; thưởng lấy qua
     # road_edges.pois_passed. Tên giữ lại cho người đọc.
