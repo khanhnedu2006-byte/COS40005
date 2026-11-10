@@ -222,7 +222,7 @@ if __name__ == "__main__":
         rows.append(row)
     # road_edges.csv cho RL: chỉ cột env cần (đi đâu, mức đường cho reward, thời gian, luật giờ cấm, POI).
     # Bảng đầy đủ (chiều dài, tên đường, số làn, mã OSM…) ở data/interim/road_edges_full.csv cho kiểm tra / bản đồ.
-    rl_fields = ["edge_id", "from_node", "to_node", "size_level", "width_m"] + [f"time_{s}" for s in SLOTS] + \
+    rl_fields = ["edge_id", "from_node", "to_node", "size_level"]   # width_m chỉ ở bảng đầy đủ + [f"time_{s}" for s in SLOTS] + \
                 ["ring_deep", "pois_passed"]
     with open(OUT / "road_edges.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=rl_fields, extrasaction="ignore"); w.writeheader(); w.writerows(rows)

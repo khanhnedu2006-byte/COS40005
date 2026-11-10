@@ -1,13 +1,13 @@
 # Data card – đồ thị đường cho RL (road_nodes / road_edges / pois)
 
 - Sinh ngày: 2026-11-10 · script: `scripts/build_road_graph.py` · kiểm tra: `scripts/check_road_graph.py`
-- `road_nodes.csv`: 37,713 nút (ngã tư / điểm cuối đường; `node_id`, `lat`, `lon`, `ring_deep`) · `road_edges.csv`: 84,766 đoạn có hướng, 19,068 km (`edge_id`, `from_node`, `to_node`, `size_level`, `width_m`, `time_<slot>` × 5, `ring_deep`, `pois_passed`; bảng đầy đủ có `length_m`, `road_class`, `lanes`, `name`… ở `data/interim/road_edges_full.csv`) · `pois.csv`: 50 POI (`point_id`, `name`, `score`)
+- `road_nodes.csv`: 37,713 nút (ngã tư / điểm cuối đường; `node_id`, `lat`, `lon`, `ring_deep`) · `road_edges.csv`: 84,766 đoạn có hướng, 19,068 km (`edge_id`, `from_node`, `to_node`, `size_level`, `time_<slot>` × 5, `ring_deep`, `pois_passed`; bảng đầy đủ có `length_m`, `road_class`, `width_m`, `lanes`, `name`… ở `data/interim/road_edges_full.csv`) · `pois.csv`: 50 POI (`point_id`, `name`, `score`)
 - Nguồn đường: OpenStreetMap (© OpenStreetMap contributors, ODbL), tải bằng OSMnx 21/10/2026, vùng [107.20, 14.95, 108.75, 16.25]; giữ thành phần liên thông mạnh lớn nhất.
 - Đường khu dân cư `residential`: chỉ giữ phố **có tên thật** (không phải "Kiệt / Hẻm / Ngõ / K12…") hoặc **≥ 2 làn** → mức `local`. Loại bỏ: residential không tên, kiệt / hẻm, `living_street`.
 - Xe chỉ **đi ngang** POI (không dừng đón trả): thưởng lấy qua `road_edges.pois_passed`. A, B (địa chỉ bất kỳ) gắn vào nút lúc chạy bằng `ABEstimator.snap()`.
 - Bảng phụ không dùng khi train: `data/interim/points_snap.csv` (toạ độ, nút gắn `node_id` / `node_id_ban`, `ring_deep` của 60 điểm) – cho kiểm tra và bản đồ.
 
-## Bề rộng mặt đường (`width_m`) – nguồn nhà nước
+## Bề rộng mặt đường – nguồn nhà nước (đã dùng để xếp `size_level`; cột `width_m` chỉ ở `data/interim/road_edges_full.csv`)
 
 - Nguồn: **Cổng Thông tin điện tử thành phố Đà Nẵng – CSDL đường phố** (https://danang.gov.vn/ttdt/csdl/duong-pho),
   2.441 đoạn phố, cột "Chiều rộng mặt (m)". Lưu ở `data/references/danang_duong_pho.csv`. **Phải ghi nguồn khi dùng lại.**

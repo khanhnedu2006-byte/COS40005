@@ -121,7 +121,7 @@ build_gps_trips.py ─► fetch_routes.py validate ─► reports/gps_validation
 ## 6. Môi trường RL – dò đường từng ngã rẽ (chốt 10/11/2026)
 
 Dữ liệu: `data/final/road_nodes.csv`, `road_edges.csv`, `pois.csv` (xem `road_graph_card.md`).
-`size_level` lấy theo **bề rộng mặt đường thật** (CSDL đường phố danang.gov.vn, cột `width_m`) khi có: ≥ 14 m lớn, 9–14 vừa, 7–9 nhỏ, 5–7 rất nhỏ; đoạn < 5 m bị bỏ. Thiếu bề rộng thì theo loại đường OSM.
+`size_level` lấy theo **bề rộng mặt đường thật** (CSDL đường phố danang.gov.vn; cột `width_m` chỉ ở `data/interim/road_edges_full.csv`, RL không cần) khi có: ≥ 14 m lớn, 9–14 vừa, 7–9 nhỏ, 5–7 rất nhỏ; đoạn < 5 m bị bỏ. Thiếu bề rộng thì theo loại đường OSM.
 **Mục tiêu bài toán: tối đa tổng điểm POI đi ngang trên tuyến A → B trong thời gian C. Tuyến dài không sao.**
 Xe chỉ ĐI NGANG POI, không dừng đón trả.
 
