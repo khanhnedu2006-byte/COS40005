@@ -17,3 +17,5 @@ gymnasium>=0.29
 # Kiểm thử
 pytest>=8
 pyyaml>=6
+
+scipy>=1.11          # ab_estimator: Dijkstra trên đồ thị OSM cho A/B bất kỳ

@@ -78,3 +78,15 @@ Hạn mức TomTom miễn phí ~2.500 request/ngày → 14.850 request ≈ **6 n
 - Dữ liệu độ rộng đường: thay bằng kích thước xe khai cho TomTom; nếu tìm được số liệu nhà nước thì dùng để kiểm tra.
 - Không dùng Google Routes API (điều khoản cấm tải hàng loạt và dùng để train AI); Goong giữ làm phương án dự phòng
   (`--provider goong`, không có giờ xuất phát).
+
+
+## 7. Cập nhật 09/11/2026 – A, B là địa chỉ bất kỳ
+
+Bài toán gốc: người dùng gõ địa chỉ A, B bất kỳ. `od_matrix.csv` giữ vai trò phần POI → POI; 5 hub chỉ là ví dụ A/B.
+
+| Việc | Trạng thái |
+|---|---|
+| Chặng đi ra từ Cầu Rồng: khai `vehicleHeading` = 90°, lấy lại 270 chặng (`fetch --refetch-from P001`) | ⏳ chờ chạy |
+| `src/busroute/graph/ab_estimator.py`: thời gian A/B bất kỳ trên đồ thị OSM, hiệu chỉnh theo TomTom (`scripts/calibrate_estimator.py`) | ✅ sai số 15–18 % trên hub, khớp feasible 97,5–99,9 % |
+| 5 điểm kiểm tra T01–T05 (`configs/test_points.py`) → `data/final/test_legs.csv` (`fetch --with-test-points`, ~2.850 lượt) | ⏳ chờ chạy |
+| Đặc tả train / kiểm tra / demo cho A/B bất kỳ: `docs/AB_ROUTING.md` | ✅ |
