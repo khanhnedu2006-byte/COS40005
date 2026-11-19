@@ -1,4 +1,5 @@
 """Run an orienteering solver or shortest-route baseline on the OD matrix."""
+
 from __future__ import annotations
 
 import argparse
@@ -15,16 +16,29 @@ def build_parser() -> argparse.ArgumentParser:
     """Shared command line for the text solver and desktop visualizer."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", default="data/final/od_matrix.csv")
-    parser.add_argument("--algorithm", choices=("alns", "vns", "aco", "dijkstra", "ppo"), default="alns")
-    parser.add_argument("--checkpoint", help="Optional trained PPO policy; without it PPO learns for this route")
+    parser.add_argument(
+        "--algorithm", choices=("alns", "vns", "aco", "dijkstra", "ppo"), default="alns"
+    )
+    parser.add_argument(
+        "--checkpoint",
+        help="Optional trained PPO policy; without it PPO learns for this route",
+    )
     parser.add_argument("--start", required=True, help="Start point ID, e.g. H01")
     parser.add_argument("--end", required=True, help="Destination point ID, e.g. H02")
-    parser.add_argument("--departure", default="08:00", help="Local departure time HH:MM")
+    parser.add_argument(
+        "--departure", default="08:00", help="Local departure time HH:MM"
+    )
     parser.add_argument("--budget-min", type=float, required=True)
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--ppo-steps", type=int, default=2048, help="Simulated steps for online PPO")
-    parser.add_argument("--verbose", action="store_true", help="Write search progress as JSON lines to stderr")
+    parser.add_argument(
+        "--ppo-steps", type=int, default=2048, help="Simulated steps for online PPO"
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Write search progress as JSON lines to stderr",
+    )
     return parser
 
 
@@ -59,31 +73,58 @@ def solve(args, *, progress=None, trace=False):
 
         features = Features(matrix, load_coordinates(args.matrix))
         if args.checkpoint:
-            algorithm: Algorithm = PPOSearch(load_policy(args.checkpoint, args.matrix), features)
+            algorithm: Algorithm = PPOSearch(
+                load_policy(args.checkpoint, args.matrix), features
+            )
         else:
             if args.verbose:
                 from ppo_progress import PPOProgress
+
                 callback = PPOProgress()
             else:
                 callback = None
-            algorithm = OnlinePPOSearch(features, PPOConfig(total_steps=args.ppo_steps, seed=args.seed), callback=callback)
+            algorithm = OnlinePPOSearch(
+                features,
+                PPOConfig(total_steps=args.ppo_steps, seed=args.seed),
+                callback=callback,
+            )
     elif args.algorithm == "alns":
-        algorithm = ALNS(iterations=args.iterations, seed=args.seed, progress=progress, trace=trace)
+        algorithm = ALNS(
+            iterations=args.iterations, seed=args.seed, progress=progress, trace=trace
+        )
     elif args.algorithm == "vns":
-        algorithm = VNS(iterations=args.iterations, seed=args.seed, progress=progress, trace=trace)
+        algorithm = VNS(
+            iterations=args.iterations, seed=args.seed, progress=progress, trace=trace
+        )
     elif args.algorithm == "aco":
-        algorithm = AntColony(iterations=args.iterations, seed=args.seed, progress=progress, trace=trace)
+        algorithm = AntColony(
+            iterations=args.iterations, seed=args.seed, progress=progress, trace=trace
+        )
     if args.algorithm == "dijkstra":
         # Validate inputs consistently with the other solvers.
         if args.start == args.end:
             raise ValueError("Start and end must be distinct known points")
-        matrix.evaluate([args.start, args.end], to_minutes(args.departure), args.budget_min * 60)
-        result = shortest_route(matrix, args.start, args.end, to_minutes(args.departure), args.budget_min * 60, progress=progress)
+        matrix.evaluate(
+            [args.start, args.end], to_minutes(args.departure), args.budget_min * 60
+        )
+        result = shortest_route(
+            matrix,
+            args.start,
+            args.end,
+            to_minutes(args.departure),
+            args.budget_min * 60,
+            progress=progress,
+        )
         if result is None:
             raise ValueError("No feasible route found within the time budget")
     else:
-        result = algorithm(matrix, args.start, args.end, to_minutes(args.departure),
-                           args.budget_min * 60)
+        result = algorithm(
+            matrix,
+            args.start,
+            args.end,
+            to_minutes(args.departure),
+            args.budget_min * 60,
+        )
     return result
 
 

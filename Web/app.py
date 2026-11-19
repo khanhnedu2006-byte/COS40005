@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import csv
+import hashlib
 import json
 import logging
 import multiprocessing as mp
 import queue
-import runpy
 import threading
 import time
 import uuid
@@ -21,15 +20,11 @@ from pathlib import Path
 from typing import TypeAlias, cast
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from busroute.routing.metaheuristics import ALNS, VNS, AntColony
-from busroute.routing.od_evaluation import shortest_route
-from busroute.routing.orienteering import ODMatrix, RouteResult
-from busroute.utils.timeslots import to_minutes
-from Web.road_paths import RoadPaths, load_points
+from Web.road_paths import RoadPaths
 from Web.types import (
     AlgorithmName,
     BootstrapPayload,
@@ -55,42 +50,27 @@ GraphLoader: TypeAlias = Callable[[list[PointMetadata]], RoadPaths]
 
 
 class RunRequest(BaseModel):
-    """Validate route inputs before spawning a search process.
-
-    Attributes:
-        algorithm: ALNS, VNS, ACO, or the Dijkstra-style travel-time baseline.
-        start: Existing starting point ID.
-        end: Existing destination ID, distinct from start.
-        departure: Local HH:MM departure time.
-        budget_min: Positive finite travel-time budget in minutes.
-        iterations: Non-negative iteration count; unused by Dijkstra.
-        seed: Integer random seed; unused by Dijkstra.
-    """
+    """Time-budgeted road search, with optional seeded heuristic iterations."""
 
     model_config = ConfigDict(extra="forbid")
     algorithm: AlgorithmName = "alns"
     start: str
     end: str
-    departure: str = Field(default="08:00", pattern=r"^\d{2}:\d{2}$")
     budget_min: float = Field(default=240, gt=0, allow_inf_nan=False)
+    departure: str = Field(default="08:00", pattern=r"^\d{2}:\d{2}$")
     iterations: int = Field(default=100, ge=0, strict=True)
     seed: int = Field(default=0, strict=True)
+    checkpoint: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def validate_route(self) -> RunRequest:
-        """Check endpoint distinction and the departure clock range.
-
-        Returns:
-            This validated request.
-
-        Raises:
-            ValueError: Endpoints match or the departure time is invalid.
-        """
         if self.start == self.end:
             raise ValueError("Choose different start and destination points")
         hour, minute = map(int, self.departure.split(":"))
         if hour >= 24 or minute >= 60:
-            raise ValueError("Departure must be a valid time in HH:MM")
+            raise ValueError("Departure must be a valid HH:MM time")
+        if self.algorithm in ("ppo", "ppo_waypoint") and not self.checkpoint:
+            raise ValueError("Choose a trained checkpoint for the selected PPO solver")
         return self
 
 
@@ -104,87 +84,29 @@ class GeometryRequest(BaseModel):
     legs: list[tuple[str, str]] = Field(max_length=200)
 
 
-class SearchCancelled(Exception):
-    """Stop a worker cooperatively after its cancellation flag is set."""
-
-
-def route_snapshot(result: RouteResult) -> RouteSnapshot:
-    """Serialize a domain result into the typed browser snapshot contract.
-
-    Args:
-        result: Completed feasible route evaluated on the OD matrix.
-
-    Returns:
-        A JSON-compatible route, score, duration, and collected-POI record.
-    """
-    return {
-        "route": list(result.route),
-        "score": result.score,
-        "duration_min": result.duration_s / 60,
-        "collected": sorted(result.collected),
-    }
-
-
-def search_worker(
-    matrix_path: str,
-    params: SearchParameters,
-    output: ProcessQueue[RunStatusPayload],
-    cancelled: ProcessEvent,
-) -> None:
-    """Compute a final route without recording intermediate visualization data.
-
-    Args:
-        matrix_path: Absolute path to the selected OD matrix.
-        params: Validated solver configuration.
-        output: Queue receiving a single terminal result or failure.
-        cancelled: Cooperative cancellation flag shared with the parent.
-    """
-
-    def check_cancelled(_event: dict[str, object]) -> None:
-        """Check cancellation at solver checkpoints without retaining progress.
-
-        Args:
-            _event: Lightweight solver progress, discarded immediately.
-
-        Raises:
-            SearchCancelled: The parent requested cancellation.
-        """
-        if cancelled.is_set():
-            raise SearchCancelled()
-
+def search_worker(road_files, points, params, output, cancelled) -> None:
+    """Compute a final graph-derived route in an isolated process."""
     try:
-        matrix = ODMatrix.from_csv(matrix_path)
-        if params["algorithm"] == "dijkstra":
-            result = shortest_route(
-                matrix,
-                params["start"],
-                params["end"],
-                to_minutes(params["departure"]),
-                params["budget_min"] * 60,
-                progress=check_cancelled,
-            )
-            if result is None:
-                raise ValueError("No feasible route found within the time budget")
-        else:
-            solver = {"alns": ALNS, "vns": VNS, "aco": AntColony}[params["algorithm"]](
-                iterations=params["iterations"],
-                seed=params["seed"],
-                progress=check_cancelled,
-            )
-            result = solver(
-                matrix,
-                params["start"],
-                params["end"],
-                to_minutes(params["departure"]),
-                params["budget_min"] * 60,
-            )
-        check_cancelled({})
-        output.put(
-            {"status": "result", "result": route_snapshot(result), "message": None}
+        from busroute.routing.road_dijkstra import find_route
+
+        result = find_route(
+            *road_files,
+            points,
+            params["start"],
+            params["end"],
+            cancelled.is_set,
+            algorithm=params["algorithm"],
+            budget_min=params["budget_min"],
+            departure=params["departure"],
+            iterations=params["iterations"],
+            seed=params["seed"],
+            checkpoint=params.get("checkpoint"),
         )
-    except SearchCancelled:
+        if not cancelled.is_set():
+            output.put({"status": "result", "result": result, "message": None})
+    except InterruptedError:
         pass
-    except Exception as exc:  # noqa: BLE001 -- process boundary must report failures
+    except Exception as exc:
         if not cancelled.is_set():
             output.put({"status": "error", "result": None, "message": str(exc)})
 
@@ -201,7 +123,7 @@ class SearchRun:
         process: Spawned solver process, separate from the API event loop.
     """
 
-    def __init__(self, matrix_path: str | Path, params: SearchParameters) -> None:
+    def __init__(self, road_files, points, params: SearchParameters) -> None:
         """Start a solver and its terminal-result collection thread.
 
         Args:
@@ -219,7 +141,13 @@ class SearchRun:
         self.cancelled: ProcessEvent = ctx.Event()
         self.process: BaseProcess = ctx.Process(
             target=search_worker,
-            args=(str(matrix_path), params, self.output, self.cancelled),
+            args=(
+                tuple(map(str, road_files)),
+                points,
+                params,
+                self.output,
+                self.cancelled,
+            ),
             daemon=True,
         )
         self.process.start()
@@ -286,45 +214,10 @@ class SearchRun:
 
 
 def point_metadata(matrix_path: str | Path) -> list[PointMetadata]:
-    """Join matrix-owned coordinates/scores with configured display names.
+    """Read endpoint and POI metadata from project configuration."""
+    from busroute.routing.road_graph import configured_points
 
-    Args:
-        matrix_path: Selected OD matrix CSV.
-
-    Returns:
-        Location metadata sorted by point ID; unknown display names use IDs.
-
-    Raises:
-        OSError: Matrix or configuration files cannot be read.
-        ValueError: The matrix or coordinate data is inconsistent.
-        KeyError: Required input fields or configuration keys are absent.
-    """
-    coordinates = load_points(matrix_path)
-    matrix = ODMatrix.from_csv(matrix_path)
-    names: dict[str, str] = {}
-    for filename, variable, key in (
-        ("hubs.py", "HUBS", "hub_id"),
-        ("pois.py", "POIS", "poi_id"),
-    ):
-        for point in runpy.run_path(str(ROOT / "configs" / filename))[variable]:
-            point_id = point[key] if key == "hub_id" else f"P{int(point[key]):03d}"
-            names[point_id] = point["name"]
-    types: dict[str, str] = {}
-    with open(matrix_path, encoding="utf-8-sig", newline="") as file:
-        for row in csv.DictReader(file):
-            for prefix in ("from", "to"):
-                types[row[f"{prefix}_id"]] = row.get(f"{prefix}_type", "point")
-    return [
-        {
-            "id": key,
-            "name": names.get(key, key),
-            "lat": lat,
-            "lon": lon,
-            "kind": types.get(key, "point"),
-            "score": matrix.scores.get(key, 0),
-        }
-        for key, (lat, lon) in sorted(coordinates.items())
-    ]
+    return configured_points(ROOT)
 
 
 def load_road_paths(points: list[PointMetadata]) -> RoadPaths:
@@ -373,7 +266,7 @@ class AppState:
         run: Latest run, retained until replaced or the server exits.
     """
 
-    def __init__(self, matrix_path: str | Path, graph_loader: GraphLoader) -> None:
+    def __init__(self, matrix_path, graph_loader, road_files, points=None) -> None:
         """Load lightweight metadata; defer the large graph to startup.
 
         Args:
@@ -381,7 +274,10 @@ class AppState:
             graph_loader: Callable that creates a road resolver from metadata.
         """
         self.matrix_path = Path(matrix_path).resolve()
-        self.points: list[PointMetadata] = point_metadata(self.matrix_path)
+        self.points: list[PointMetadata] = (
+            points if points is not None else point_metadata(self.matrix_path)
+        )
+        self.road_files = tuple(Path(path).resolve() for path in road_files)
         self.ids: set[str] = {p["id"] for p in self.points}
         self.graph_loader: GraphLoader = graph_loader
         self.graph_status: GraphStatus = "loading"
@@ -426,11 +322,13 @@ class AppState:
         with self.run_lock:
             if self.closed:
                 raise HTTPException(503, "Server is shutting down")
+            if self.graph_status != "ready":
+                raise HTTPException(503, self.graph_error or "Road data unavailable")
             if self.run is not None and self.run.status not in TERMINAL:
                 raise HTTPException(
                     409, "Stop the active search before starting another"
                 )
-            self.run = SearchRun(self.matrix_path, params)
+            self.run = SearchRun(self.road_files, self.points, params)
             return self.run
 
     def get_run(self, run_id: str) -> SearchRun:
@@ -454,6 +352,10 @@ def create_app(
     matrix_path: str | Path = ROOT / "data/final/od_matrix.csv",
     *,
     graph_loader: GraphLoader = load_road_paths,
+    nodes_path: str | Path = ROOT / "data/stage1/nodes_base.parquet",
+    edges_path: str | Path = ROOT / "data/stage1/edges_base.parquet",
+    widths_path: str | Path = ROOT / "data/final/duong_pho_clean.csv",
+    points: list[PointMetadata] | None = None,
 ) -> FastAPI:
     """Build a local FastAPI app with isolated searches and static web assets.
 
@@ -468,7 +370,9 @@ def create_app(
         OSError: Required matrix or configuration files cannot be read.
         ValueError: Startup metadata is invalid.
     """
-    state = AppState(matrix_path, graph_loader)
+    state = AppState(
+        matrix_path, graph_loader, (nodes_path, edges_path, widths_path), points
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
@@ -480,9 +384,25 @@ def create_app(
         Yields:
             Control to the serving application after starting its loader.
         """
-        threading.Thread(
-            target=state.initialize_graph, daemon=True, name="osm-loader"
-        ).start()
+        started = time.perf_counter()
+        try:
+            import pandas as pd
+            from busroute.routing.road_graph import snap_points
+
+            missing = [path.name for path in state.road_files if not path.is_file()]
+            if missing:
+                raise ValueError(f"Missing road files: {', '.join(missing)}")
+            snapped, distances, _ = snap_points(
+                pd.read_parquet(state.road_files[0]), state.points
+            )
+            for point in state.points:
+                point["routing_available"] = point["id"] in snapped
+                point["snap_distance_m"] = distances[point["id"]]
+            state.graph_status = "ready"
+            state.graph_loads = 1
+        except Exception as exc:
+            state.graph_status, state.graph_error = "error", str(exc)
+        state.graph_seconds = round(time.perf_counter() - started, 3)
         yield
         state.closed = True
         if state.run is not None:
@@ -491,14 +411,21 @@ def create_app(
     app = FastAPI(title="Da Nang Route Lab", lifespan=lifespan)
     app.state.lab = state
 
-    @app.get("/")
-    def index() -> FileResponse:
-        """Return the browser application shell.
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> HTMLResponse:
+        """Return fresh HTML with content-versioned application assets.
 
         Returns:
-            The locally bundled HTML document.
+            HTML whose script and stylesheet URLs change with their contents,
+            preventing cached assets from targeting an outdated page structure.
         """
-        return FileResponse(ASSETS / "index.html")
+        html = (ASSETS / "index.html").read_text(encoding="utf-8")
+        for filename in ("app.js", "app.css"):
+            version = hashlib.sha256((ASSETS / filename).read_bytes()).hexdigest()[:12]
+            html = html.replace(
+                f'"/assets/{filename}"', f'"/assets/{filename}?v={version}"'
+            )
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/status")
     def status() -> GraphStatusPayload:
@@ -527,25 +454,27 @@ def create_app(
         """
         from busroute.config.restrictions import RING_FILE
 
-        ids = sorted(state.ids)
+        ids = sorted(p["id"] for p in state.points if p.get("routing_available", True))
         if len(ids) < 2:
-            raise HTTPException(422, "The matrix needs at least two distinct points")
-        start = "H01" if "H01" in state.ids else ids[0]
+            raise HTTPException(
+                422, "At least two available road endpoints are required"
+            )
+        start = "H01" if "H01" in ids else ids[0]
         end = (
             "H02"
-            if "H02" in state.ids and start != "H02"
+            if "H02" in ids and start != "H02"
             else next(p for p in ids if p != start)
         )
         return {
             "points": state.points,
-            "matrix": state.matrix_path.name,
+            "matrix": "Road graph + road widths",
             "ring": cast(JSONObject, json.loads(RING_FILE.read_text(encoding="utf-8"))),
             "defaults": {
                 "algorithm": "alns",
                 "start": start,
                 "end": end,
-                "departure": "08:00",
                 "budget_min": 240,
+                "departure": "08:00",
                 "iterations": 100,
                 "seed": 0,
             },
@@ -605,7 +534,14 @@ def create_app(
         """
         if body.start not in state.ids or body.end not in state.ids:
             raise HTTPException(
-                422, "Start and destination must be in the selected matrix"
+                422, "Start and destination must be configured road points"
+            )
+        unavailable = {
+            p["id"] for p in state.points if not p.get("routing_available", True)
+        }
+        if body.start in unavailable or body.end in unavailable:
+            raise HTTPException(
+                422, "An endpoint is more than 300 m from the road graph"
             )
         run = state.start(cast(SearchParameters, body.model_dump()))
         return {"id": run.id}

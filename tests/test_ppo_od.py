@@ -208,19 +208,47 @@ def test_sbx_training_masks_checkpoint_and_inference(tmp_path):
         online(matrix, "H1", "H2", 480, 1)
     root = Path(__file__).resolve().parents[1]
     online_run = subprocess.run(
-        [sys.executable, str(root / "scripts/online_ppo.py"), "--matrix", str(path),
-         "--start", "H1", "--end", "H2", "--budget-min", "60", "--steps", "8",
-         "--rollout-steps", "4", "--minibatch-size", "2", "--epochs", "1",
-         "--hidden-dim", "8"],
-        text=True, capture_output=True, check=True,
+        [
+            sys.executable,
+            str(root / "scripts/online_ppo.py"),
+            "--matrix",
+            str(path),
+            "--start",
+            "H1",
+            "--end",
+            "H2",
+            "--budget-min",
+            "60",
+            "--steps",
+            "8",
+            "--rollout-steps",
+            "4",
+            "--minibatch-size",
+            "2",
+            "--epochs",
+            "1",
+            "--hidden-dim",
+            "8",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
     )
     live_json = json.loads(online_run.stdout)
     assert live_json == matrix.evaluate(live_json["route"], 480, 3600).to_dict()
     logs = [json.loads(line) for line in online_run.stderr.splitlines()]
-    assert [entry["event"] for entry in logs] == ["training_start", "rollout", "rollout", "training_end"]
+    assert [entry["event"] for entry in logs] == [
+        "training_start",
+        "rollout",
+        "rollout",
+        "training_end",
+    ]
     assert [entry["steps"] for entry in logs] == [0, 4, 8, 8]
     assert [entry["completed_updates"] for entry in logs[1:]] == [0, 1, 2]
-    assert all(entry["episodes"] > 0 and entry["mean_episode_reward"] is not None for entry in logs[1:3])
+    assert all(
+        entry["episodes"] > 0 and entry["mean_episode_reward"] is not None
+        for entry in logs[1:3]
+    )
     ppo_output = subprocess.check_output(
         [
             sys.executable,
@@ -259,7 +287,8 @@ def test_sbx_training_masks_checkpoint_and_inference(tmp_path):
                 "60",
                 "--iterations",
                 "0",
-            ] + extra,
+            ]
+            + extra,
             text=True,
         )
         actual = json.loads(output)

@@ -6,7 +6,6 @@ import argparse
 import threading
 import webbrowser
 from collections.abc import Sequence
-from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -22,7 +21,6 @@ def main(argv: Sequence[str] | None = None) -> None:
             missing, or the user interrupts the server with Ctrl+C.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--matrix", default="data/final/od_matrix.csv")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args(argv)
@@ -35,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     except ImportError as exc:
         parser.exit(2, f"error: {exc}\nInstall web support: uv sync --extra web\n")
     try:
-        app = create_app(Path(args.matrix))
+        app = create_app()
     except (OSError, ValueError, KeyError) as exc:
         parser.exit(2, f"error: {exc}\n")
     url = f"http://127.0.0.1:{args.port}"

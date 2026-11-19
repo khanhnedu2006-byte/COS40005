@@ -1,9 +1,103 @@
 # Route-search algorithms
 
-## Common problem and evaluation
+## Time-budgeted road solvers in the web application
 
-The application searches an origin/destination matrix, not individual OSM road
-nodes. A request supplies distinct known endpoints, a local departure minute,
+Dijkstra, ALNS, VNS, ACO and both PPO solvers use the full directed base graph and configured POIs/hubs.
+Travel time follows commits `76f750b` (AB estimator) and `39bb0e5` (road-edge
+builder): edge seconds = length in metres × calibrated seconds/metre for its
+road-class group and time slot, using `configs/estimator_params.json`. Class
+mapping is shared with `ABEstimator.GROUP_OF`. Classes outside that mapping use
+local-road coefficients to retain the full graph. No fixed per-connection fee is
+added, matching the road-edge builder's formula.
+
+Cached Dijkstra trees supply the fastest connection under the rates for a
+single slot. If a connection may cross a slot boundary, the solver also
+considers paths from the subsequent slots it could reach within the budget.
+It replays each candidate using each edge's actual departure slot and keeps
+the earliest arrival. For tours with waypoints it also compares the route
+using the original departure-slot paths because a different waypoint arrival
+can change the traffic on later legs. The destination is a sink, so a connection to a POI
+cannot drive through it. PPO uses the same edge clock, including midnight
+wraparound. The search compares a finite set of slot-specific candidates, so
+its result is an estimate of the fastest time-dependent connection.
+
+ALNS, VNS and ACO maximize unique POI score within a time budget, breaking ties by
+narrow-road-weighted distance, then estimated time and physical distance. The
+existing CSV name matcher applies 2× distance cost for unambiguous widths below
+5.5 m; unknown widths remain unpenalized. These penalties do not inflate reported
+travel time. Dijkstra supplies the fastest-estimated-time baseline.
+
+All three heuristics start from the direct connection and greedily insert useful
+waypoints. ALNS uses random/worst removal, greedy/randomized repair, adaptive
+operator weights and annealing. VNS cycles removal sizes one through four,
+repairs randomly, and tests waypoint replacement and relocation. ACO builds
+one route per iteration from the direct connection, sampling feasible insertions
+by score gain per second and pheromone on adjacent waypoint connections.
+Pheromone evaporates each iteration and the best route reinforces its
+connections. Trees and connections are built lazily and reused across trials.
+
+Connection POI masks are cached. Scores count each POI once within 100 m of the
+approximate road geometry; selected waypoints receive no automatic credit.
+Distinct IDs may share a snapped node and zero-length connections are supported.
+Endpoint/waypoint snapping remains limited to 300 m.
+
+Web defaults: 240 minutes, departure 08:00, 100 iterations, seed 0. Responses
+include `duration_min`, physical `distance_km`, waypoints, geometry, collected
+POIs, width coverage and estimated directions. Road curves and bus restrictions
+are absent from the base tables. The geometry and timing are estimates.
+
+## Waypoint PPO
+
+Waypoint PPO chooses an uncollected POI or finishes at the requested destination.
+It shares Dijkstra connections, the traffic-slot clock, and the route renderer
+with ALNS and VNS. A POI action is available when the road planner verifies
+both the drive to the POI and a continuation that fits the remaining budget.
+The policy earns the scores of newly passed POIs on each leg, including the
+final leg. Training samples feasible hub pairs across the configured departure
+slots and budgets and holds out the benchmark's ordered endpoint pairs.
+
+```bash
+python scripts/ppo_waypoint.py train --steps 100000 --seed 0
+python scripts/ppo_waypoint.py infer --start H01 --end H02 --departure 08:00 --budget-min 240
+python scripts/ppo_waypoint.py benchmark --report results/ppo_waypoint_benchmark.json
+```
+
+The browser and CLI use `checkpoints/ppo_waypoint.zip` by default. The
+checkpoint binds the policy to the graph and ordered waypoint actions.
+
+## Edge PPO on the full road graph
+
+`ppo_road.py` delegates rollout collection, GAE, clipping, advantage
+normalization and optimization to **stable_baselines3.PPO**. `road_ppo_env.py` defines the
+Gymnasium interface, road clock, unique POI rewards, narrow-road penalties,
+curriculum and compact observations. `road_ppo_policy.py` defines a masked
+Torch actor and critic sharing a trainable two-layer directed GraphSAGE encoder
+that processes every road node with sparse edge-list aggregation.
+
+Each action traverses one outgoing edge, including parallel edges. Padded
+slots and moves whose duration plus an optimistic return-time bound exceed
+the remaining budget are masked inside the actor, during both sampling and
+updates. The bound minimizes each edge's time over all slots; actual slot
+changes can still cause failure. Step caps, dead ends and arrival are terminal
+states, while ordinary rollout cuts bootstrap SB3's critic.
+
+Checkpoints use SB3 ZIP serialization, preserving policy/optimizer state,
+graph fingerprints, RNG state, counters and fixed held-out cases. Continuation
+starts a new trip. The full-graph embeddings are cached only while collecting rollouts or
+predicting without gradients. Training minibatches recompute them. Old SBX
+ZIPs and `.pt` weights require retraining. See the
+[pipeline walkthrough](ppo-road.md) for annotated data flow and commands.
+
+Road inference never substitutes a Dijkstra path if the policy fails.
+Successful policy edges share replay, score, geometry and instructions with
+the other road solvers. Compare completion, POI score, travel time and
+narrow-road exposure on identical trips; PPO's shaped reward and the
+heuristics' lexicographic objectives differ.
+
+## Legacy OD-matrix problem and evaluation
+
+
+The existing CLI and native viewer search an origin/destination matrix. A request supplies distinct known endpoints, a local departure minute,
 and a travel-time budget. Each directed leg uses the matrix entry for its
 departure time slot. A missing or infeasible entry cannot be traversed.
 

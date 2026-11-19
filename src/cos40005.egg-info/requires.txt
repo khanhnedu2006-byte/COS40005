@@ -9,10 +9,14 @@ pandas>=2.3.3
 polars>=2.0.0
 pyarrow>=25.0.1
 pytest>=9.2.0
-sbx-rl>=0.28.0
 scikit-learn-intelex>=2026.2.0
+scipy>=1.11
 stable-baselines3>=2.9.2
+torch>=2.6
 typing-extensions>=4.12
+
+[legacy-od-ppo]
+sbx-rl<0.29,>=0.28.0
 
 [test]
 httpx>=0.28

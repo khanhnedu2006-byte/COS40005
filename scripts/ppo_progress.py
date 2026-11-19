@@ -31,10 +31,18 @@ class PPOProgress(BaseCallback):
             steps=self.num_timesteps,
             completed_updates=self.model._n_updates,
             episodes=count,
-            mean_episode_reward=round(sum(r for r, _ in self.episodes) / count, 3) if count else None,
-            success_rate=round(sum(s for _, s in self.episodes) / count, 3) if count else None,
+            mean_episode_reward=round(sum(r for r, _ in self.episodes) / count, 3)
+            if count
+            else None,
+            success_rate=round(sum(s for _, s in self.episodes) / count, 3)
+            if count
+            else None,
         )
         self.episodes = []
 
     def _on_training_end(self):
-        self._emit("training_end", steps=self.num_timesteps, completed_updates=self.model._n_updates)
+        self._emit(
+            "training_end",
+            steps=self.num_timesteps,
+            completed_updates=self.model._n_updates,
+        )

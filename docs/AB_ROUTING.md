@@ -22,9 +22,10 @@ sai số trung bình 15–18 % tuỳ khung giờ, khớp "đi được / không"
 ```python
 import numpy as np
 from busroute.graph.ab_estimator import load_default, ab_rows, sample_points
-est = load_default(pois)                          # pois: [{"id","lat","lon"}, …] – 50 POI
+
+est = load_default(pois)  # pois: [{"id","lat","lon"}, …] – 50 POI
 rng = np.random.default_rng(0)
-A, B = sample_points(est, 2, rng)                 # hoặc toạ độ từ ô tìm địa chỉ
+A, B = sample_points(est, 2, rng)  # hoặc toạ độ từ ô tìm địa chỉ
 rows = ab_rows(est, {**A, "id": "A"}, {**B, "id": "B"}, scores=poi_scores)
 ```
 

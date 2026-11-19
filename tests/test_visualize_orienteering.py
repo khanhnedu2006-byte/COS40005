@@ -1,4 +1,5 @@
 """Route tracing must describe the search without changing its results."""
+
 import csv
 import importlib
 from pathlib import Path
@@ -20,9 +21,16 @@ def viewer(monkeypatch):
 @pytest.mark.parametrize("solver", [ALNS, VNS])
 def test_operator_trace_preserves_results_and_feasible_snapshots(solver):
     points = {"A", "B", "P", "Q"}
-    matrix = ODMatrix({(a, b, "morning"): Leg(60, frozenset())
-                       for a in points for b in points if a != b},
-                      {"P": 3, "Q": 4}, points)
+    matrix = ODMatrix(
+        {
+            (a, b, "morning"): Leg(60, frozenset())
+            for a in points
+            for b in points
+            if a != b
+        },
+        {"P": 3, "Q": 4},
+        points,
+    )
     events = []
     expected = solver(iterations=8, seed=9)(matrix, "A", "B", 480, 180)
     traced = solver(iterations=8, seed=9, trace=True, progress=events.append)
@@ -35,7 +43,9 @@ def test_operator_trace_preserves_results_and_feasible_snapshots(solver):
         for key in ("best", "current", "candidate"):
             if key in event:
                 snapshot = event[key]
-                assert matrix.evaluate(snapshot["route"], 480, 180).to_dict() == snapshot
+                assert (
+                    matrix.evaluate(snapshot["route"], 480, 180).to_dict() == snapshot
+                )
         if "best" in event:
             best = event["best"]
             best_quality.append((best["score"], -best["duration_min"]))
@@ -72,7 +82,9 @@ def test_coordinate_loader_rejects_inconsistent_points(viewer, tmp_path):
     path = tmp_path / "matrix.csv"
     with path.open("w", newline="", encoding="utf-8-sig") as file:
         writer = csv.writer(file)
-        writer.writerow(["from_id", "from_lat", "from_lon", "to_id", "to_lat", "to_lon"])
+        writer.writerow(
+            ["from_id", "from_lat", "from_lon", "to_id", "to_lat", "to_lon"]
+        )
         writer.writerow(["A", 16, 108, "B", 16.1, 108.1])
         writer.writerow(["A", 16.2, 108, "B", 16.1, 108.1])
     with pytest.raises(ValueError, match="Inconsistent coordinates for A"):
@@ -82,9 +94,24 @@ def test_coordinate_loader_rejects_inconsistent_points(viewer, tmp_path):
 def test_visualizer_reuses_solver_arguments(viewer):
     from solve_orienteering import build_parser, solve
 
-    args = build_parser().parse_args(["--matrix", "data/final/od_matrix_mock.csv",
-                                    "--algorithm", "vns", "--start", "H01", "--end", "H02",
-                                    "--budget-min", "240", "--iterations", "1", "--seed", "42"])
+    args = build_parser().parse_args(
+        [
+            "--matrix",
+            "data/final/od_matrix_mock.csv",
+            "--algorithm",
+            "vns",
+            "--start",
+            "H01",
+            "--end",
+            "H02",
+            "--budget-min",
+            "240",
+            "--iterations",
+            "1",
+            "--seed",
+            "42",
+        ]
+    )
     events = []
     assert solve(args) == solve(args, trace=True, progress=events.append)
     assert any(e["event"] == "operator" for e in events)

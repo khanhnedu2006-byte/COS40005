@@ -915,13 +915,20 @@ dependencies = [
     { name = "pyarrow", version = "25.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pyarrow", version = "26.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pytest" },
-    { name = "sbx-rl" },
     { name = "scikit-learn-intelex" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "stable-baselines3" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
+legacy-od-ppo = [
+    { name = "sbx-rl" },
+]
 test = [
     { name = "httpx" },
 ]
@@ -956,13 +963,15 @@ requires-dist = [
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pyyaml", marker = "extra == 'visualization'", specifier = ">=6" },
     { name = "pyyaml", marker = "extra == 'web'", specifier = ">=6" },
-    { name = "sbx-rl", specifier = ">=0.28.0" },
+    { name = "sbx-rl", marker = "extra == 'legacy-od-ppo'", specifier = ">=0.28.0,<0.29" },
     { name = "scikit-learn-intelex", specifier = ">=2026.2.0" },
+    { name = "scipy", specifier = ">=1.11" },
     { name = "stable-baselines3", specifier = ">=2.9.2" },
+    { name = "torch", specifier = ">=2.6" },
     { name = "typing-extensions", specifier = ">=4.12" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.30" },
 ]
-provides-extras = ["visualization", "web", "test"]
+provides-extras = ["legacy-od-ppo", "visualization", "web", "test"]
 
 [[package]]
 name = "cramjam"

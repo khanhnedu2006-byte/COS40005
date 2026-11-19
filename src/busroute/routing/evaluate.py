@@ -17,7 +17,9 @@ class RouteMetrics(TypedDict):
 
 
 def route_metrics(
-    G: nx.MultiDiGraph, route: Sequence[Hashable], budget_s: float,
+    G: nx.MultiDiGraph,
+    route: Sequence[Hashable],
+    budget_s: float,
     weight: str = "travel_time_morning",
 ) -> RouteMetrics:
     """Summarize travel time, unique POI scores, and unverified route edges.

@@ -3,6 +3,7 @@
 The matrix describes a single route per pair and departure slot. It does not
 resolve restrictions encountered partway through a leg or include visit times.
 """
+
 from __future__ import annotations
 
 import csv
@@ -33,15 +34,23 @@ class RouteResult:
 
     def to_dict(self) -> dict:
         """Return the common JSON-compatible representation of a route."""
-        return {"route": list(self.route), "score": self.score,
-                "duration_min": self.duration_s / 60, "collected": sorted(self.collected)}
+        return {
+            "route": list(self.route),
+            "score": self.score,
+            "duration_min": self.duration_s / 60,
+            "collected": sorted(self.collected),
+        }
 
 
 class ODMatrix:
     """Directed, slot-specific OD legs and the scores of candidate POIs."""
 
-    def __init__(self, legs: dict[tuple[str, str, str], Leg], scores: dict[str, float],
-                 points: set[str]) -> None:
+    def __init__(
+        self,
+        legs: dict[tuple[str, str, str], Leg],
+        scores: dict[str, float],
+        points: set[str],
+    ) -> None:
         self.legs = legs
         self.scores = scores
         self.points = points
@@ -88,7 +97,9 @@ class ODMatrix:
                     duration = float(row["duration_s"])
                     if not math.isfinite(duration) or duration <= 0:
                         raise ValueError(f"Invalid duration for {key}: {duration}")
-                    passed = frozenset(p.strip() for p in row["pois_passed"].split(";") if p.strip())
+                    passed = frozenset(
+                        p.strip() for p in row["pois_passed"].split(";") if p.strip()
+                    )
                     legs[key] = Leg(duration, passed)
         if not points:
             raise ValueError("OD matrix is empty")
@@ -97,7 +108,9 @@ class ODMatrix:
             raise ValueError(f"Unknown passed POIs: {sorted(unknown)}")
         return cls(legs, scores, points)
 
-    def evaluate(self, route: Sequence[str], start_minute: int, budget_s: float) -> RouteResult | None:
+    def evaluate(
+        self, route: Sequence[str], start_minute: int, budget_s: float
+    ) -> RouteResult | None:
         """Evaluate a route; return None if a leg or the time budget is infeasible.
 
         A start POI counts as collected. Passing a POI and stopping at it earn
@@ -119,7 +132,9 @@ class ODMatrix:
         if len(route) < 2 or any(point not in self.points for point in route):
             raise ValueError("Route must contain at least two known points")
         if not 0 <= start_minute < 1440 or not math.isfinite(budget_s) or budget_s <= 0:
-            raise ValueError("start_minute must be in [0, 1440), and budget_s must be positive")
+            raise ValueError(
+                "start_minute must be in [0, 1440), and budget_s must be positive"
+            )
         elapsed = 0.0
         collected = {route[0]} & self.scores.keys()
         for origin, dest in zip(route, route[1:]):
@@ -133,4 +148,9 @@ class ODMatrix:
             collected.update(leg.passed)
             if dest in self.scores:
                 collected.add(dest)
-        return RouteResult(tuple(route), sum(self.scores[p] for p in sorted(collected)), elapsed, frozenset(collected))
+        return RouteResult(
+            tuple(route),
+            sum(self.scores[p] for p in sorted(collected)),
+            elapsed,
+            frozenset(collected),
+        )

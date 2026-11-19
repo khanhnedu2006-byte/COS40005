@@ -1,4 +1,9 @@
-"""Vòng huấn luyện PPO. Khung – nhóm hoàn thiện phần TODO."""
+"""Legacy teaching helpers, retained outside the active library-based pipelines.
+
+For training, use ``ppo_road.train`` (complete road graph) or ``ppo_od.train``
+(OD matrix). They delegate PPO updates and GAE to SB3 and SBX, respectively. The functions below
+illustrate the older Torch mathematics and are not used by those pipelines.
+"""
 
 from collections.abc import Callable, Mapping
 
@@ -9,13 +14,25 @@ from busroute.routing.env import TourRouteEnv
 
 
 def compute_gae(
-    rewards: torch.Tensor, values: torch.Tensor, dones: torch.Tensor,
-    gamma: float = 0.99, lam: float = 0.95,
+    rewards: torch.Tensor,
+    values: torch.Tensor,
+    dones: torch.Tensor,
+    gamma: float = 0.99,
+    lam: float = 0.95,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return GAE advantages and value targets for a one-dimensional rollout.
+    """Illustrate GAE advantages and value targets for a legacy Torch rollout.
 
-    `rewards`, `values` and boolean `dones` have equal length. The value after
-    the final element is assumed zero, including for truncated rollouts.
+    Args:
+        rewards: One-dimensional reward tensor with T entries.
+        values: Predicted values for those same T states.
+        dones: Boolean terminal flags of length T.
+        gamma: Discount factor for future rewards.
+        lam: GAE bias/variance parameter.
+
+    Returns:
+        Advantage and value-target tensors of length T. This teaching helper
+        assumes zero value after the last entry, even at a nonterminal cut;
+        active library-based training uses correctly bootstrapped rollout buffers.
     """
     adv, last = torch.zeros_like(rewards), 0.0
     for t in reversed(range(len(rewards))):
@@ -37,10 +54,22 @@ def ppo_loss(
     vf_coef: float = 0.5,
     ent_coef: float = 0.01,
 ) -> torch.Tensor:
-    """Compute the scalar clipped-policy, value, and entropy PPO loss.
+    """Illustrate the legacy Torch clipped-policy, value and entropy loss.
 
-    Inputs are batches with compatible shapes. `old_logp`, advantages and
-    returns should be detached by the caller when they are fixed targets.
+    Args:
+        new_logp: Current policy log probabilities for sampled actions.
+        old_logp: Detached behavior-policy log probabilities for those actions.
+        adv: Detached advantage estimates with compatible batch shape.
+        returns: Detached value targets with compatible batch shape.
+        values: Current critic estimates.
+        entropy: Current policy entropy per sample.
+        clip_eps: Policy-ratio clipping range.
+        vf_coef: Squared-value-loss coefficient.
+        ent_coef: Entropy regularization coefficient.
+
+    Returns:
+        Scalar differentiable combined loss. This teaching helper is not used
+        by either active library-based training pipeline.
     """
     ratio = torch.exp(new_logp - old_logp)
     policy_loss = -torch.min(
@@ -51,7 +80,9 @@ def ppo_loss(
 
 
 def train(
-    env_factory: Callable[[], TourRouteEnv], encoder: nn.Module, head: nn.Module,
+    env_factory: Callable[[], TourRouteEnv],
+    encoder: nn.Module,
+    head: nn.Module,
     cfg: Mapping[str, object],
 ) -> None:
     """Placeholder for the PPO training loop; its intended API may change.

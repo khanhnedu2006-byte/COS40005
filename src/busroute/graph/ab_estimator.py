@@ -7,6 +7,7 @@ TomTom (scripts/calibrate_estimator.py → configs/estimator_params.json).
 Luật giống od_matrix: giờ cấm bỏ đoạn đường nằm sâu trong vành đai (trừ trục Duy Tân);
 điểm đầu/cuối nằm sâu trong vành đai → giờ cấm không đi được.
 """
+
 import json
 import math
 from pathlib import Path
@@ -22,17 +23,38 @@ SLOTS = ["morning", "ban_noon", "afternoon", "ban_evening", "night"]
 BAN_SLOTS = {"ban_noon", "ban_evening"}
 # Gom loại đường OSM thành 6 nhóm để hiệu chỉnh tốc độ
 GROUP_OF = {
-    "motorway": "fast", "motorway_link": "fast", "trunk": "fast", "trunk_link": "fast",
-    "primary": "primary", "primary_link": "primary",
-    "secondary": "secondary", "secondary_link": "secondary",
-    "tertiary": "tertiary", "tertiary_link": "tertiary",
-    "unclassified": "minor", "road": "minor",
-    "residential": "local", "living_street": "local",
+    "motorway": "fast",
+    "motorway_link": "fast",
+    "trunk": "fast",
+    "trunk_link": "fast",
+    "primary": "primary",
+    "primary_link": "primary",
+    "secondary": "secondary",
+    "secondary_link": "secondary",
+    "tertiary": "tertiary",
+    "tertiary_link": "tertiary",
+    "unclassified": "minor",
+    "road": "minor",
+    "residential": "local",
+    "living_street": "local",
 }
 GROUPS = ["fast", "primary", "secondary", "tertiary", "minor", "local"]
 # Tốc độ khởi tạo (km/h) trước khi hiệu chỉnh
-INIT_KMH = {"fast": 45, "primary": 30, "secondary": 25, "tertiary": 22, "minor": 18, "local": 12}
-SNAP_GROUPS = {"fast", "primary", "secondary", "tertiary", "minor"}   # điểm đón phải ở đường xe lớn vào được
+INIT_KMH = {
+    "fast": 45,
+    "primary": 30,
+    "secondary": 25,
+    "tertiary": 22,
+    "minor": 18,
+    "local": 12,
+}
+SNAP_GROUPS = {
+    "fast",
+    "primary",
+    "secondary",
+    "tertiary",
+    "minor",
+}  # điểm đón phải ở đường xe lớn vào được
 PASS_RADIUS_M = 100
 
 
@@ -41,8 +63,19 @@ def _m_per_deg(lat):
 
 
 class ABEstimator:
-    def __init__(self, nodes, edges, ring_polygon, corridor_segs, pois, params=None,
-                 edge_band_m=25, corridor_band_m=30, endpoint_edge_ok_m=100, endpoint_corridor_ok_m=50):
+    def __init__(
+        self,
+        nodes,
+        edges,
+        ring_polygon,
+        corridor_segs,
+        pois,
+        params=None,
+        edge_band_m=25,
+        corridor_band_m=30,
+        endpoint_edge_ok_m=100,
+        endpoint_corridor_ok_m=50,
+    ):
         self.lat = nodes.sort_values("node_idx").lat.to_numpy()
         self.lon = nodes.sort_values("node_idx").lon.to_numpy()
         e = edges[edges.road_class.isin(GROUP_OF)].copy()
@@ -54,9 +87,17 @@ class ABEstimator:
         self.ring = np.array(ring_polygon)
         self.corr = np.array(corridor_segs) if corridor_segs else np.zeros((0, 2, 2))
         self.edge_band_m, self.corridor_band_m = edge_band_m, corridor_band_m
-        self.endpoint_edge_ok_m, self.endpoint_corridor_ok_m = endpoint_edge_ok_m, endpoint_corridor_ok_m
+        self.endpoint_edge_ok_m, self.endpoint_corridor_ok_m = (
+            endpoint_edge_ok_m,
+            endpoint_corridor_ok_m,
+        )
         # Đoạn nằm sâu trong vành đai (theo trung điểm) → bị bỏ trong giờ cấm
-        mid = np.column_stack([(self.lat[self.u] + self.lat[self.v]) / 2, (self.lon[self.u] + self.lon[self.v]) / 2])
+        mid = np.column_stack(
+            [
+                (self.lat[self.u] + self.lat[self.v]) / 2,
+                (self.lon[self.u] + self.lon[self.v]) / 2,
+            ]
+        )
         self.edge_deep = self.deep_in_ring(mid, edge_band_m, corridor_band_m)
         self.poi_ids = [p["id"] for p in pois]
         self.poi_xy = np.array([[p["lat"], p["lon"]] for p in pois])
@@ -88,7 +129,7 @@ class ABEstimator:
             return np.full(len(pts), np.inf)
         out = np.empty(len(pts))
         for s in range(0, len(pts), chunk):
-            p = pts[s:s + chunk]
+            p = pts[s : s + chunk]
             kx = (111320 * np.cos(np.radians(p[:, 0])))[:, None]
             ax, ay = (a[:, 1] - p[:, 1:2]) * kx, (a[:, 0] - p[:, 0:1]) * 110540
             bx, by = (b[:, 1] - p[:, 1:2]) * kx, (b[:, 0] - p[:, 0:1]) * 110540
@@ -96,7 +137,7 @@ class ABEstimator:
             L = dx * dx + dy * dy
             with np.errstate(divide="ignore", invalid="ignore"):
                 t = np.clip(np.where(L > 0, -(ax * dx + ay * dy) / L, 0), 0, 1)
-            out[s:s + chunk] = np.hypot(ax + t * dx, ay + t * dy).min(axis=1)
+            out[s : s + chunk] = np.hypot(ax + t * dx, ay + t * dy).min(axis=1)
         return out
 
     def deep_in_ring(self, pts, edge_band, corridor_band):
@@ -105,8 +146,12 @@ class ABEstimator:
         idx = np.where(inside)[0]
         if len(idx):
             sub = pts[idx]
-            ok = (self.dist_to_segs(sub, self.ring, np.roll(self.ring, -1, axis=0)) > edge_band) & \
-                 (self.dist_to_segs(sub, self.corr[:, 0], self.corr[:, 1]) > corridor_band)
+            ok = (
+                self.dist_to_segs(sub, self.ring, np.roll(self.ring, -1, axis=0))
+                > edge_band
+            ) & (
+                self.dist_to_segs(sub, self.corr[:, 0], self.corr[:, 1]) > corridor_band
+            )
             inside[idx] = ok
         return inside
 
@@ -115,8 +160,10 @@ class ABEstimator:
     def load_params():
         if PARAMS_FILE.exists():
             return json.loads(PARAMS_FILE.read_text(encoding="utf-8"))
-        return {"s_per_m": {s: {g: 3.6 / INIT_KMH[g] for g in GROUPS} for s in SLOTS},
-                "overhead_s": {s: 0.0 for s in SLOTS}}
+        return {
+            "s_per_m": {s: {g: 3.6 / INIT_KMH[g] for g in GROUPS} for s in SLOTS},
+            "overhead_s": {s: 0.0 for s in SLOTS},
+        }
 
     def set_params(self, params):
         self.params = params
@@ -136,7 +183,7 @@ class ABEstimator:
             u, v, w, eid = u[first], v[first], w[first], eid[first]
             g = csr_matrix((w, (u, v)), shape=(self.n, self.n))
             gt = csr_matrix((w, (v, u)), shape=(self.n, self.n))
-            keys = u.astype(np.int64) * self.n + v                            # đã sắp theo (u, v)
+            keys = u.astype(np.int64) * self.n + v  # đã sắp theo (u, v)
             self._graphs[slot] = (g, gt, (keys, eid))
         return self._graphs[slot]
 
@@ -151,7 +198,13 @@ class ABEstimator:
         return int(cand[i]), float(d[i])
 
     def endpoint_banned(self, lat, lon):
-        return bool(self.deep_in_ring(np.array([[lat, lon]]), self.endpoint_edge_ok_m, self.endpoint_corridor_ok_m)[0])
+        return bool(
+            self.deep_in_ring(
+                np.array([[lat, lon]]),
+                self.endpoint_edge_ok_m,
+                self.endpoint_corridor_ok_m,
+            )[0]
+        )
 
     def _path_edges(self, pred, src, dst, edge_of, reverse=False):
         # Danh sách mã cạnh trên đường đi ngắn nhất (pred từ dijkstra)
@@ -161,7 +214,7 @@ class ABEstimator:
             if cur < 0:
                 return None
             nodes.append(cur)
-        nodes = np.array(nodes[::-1], dtype=np.int64)        # src … dst theo chiều dijkstra
+        nodes = np.array(nodes[::-1], dtype=np.int64)  # src … dst theo chiều dijkstra
         a, b = (nodes[1:], nodes[:-1]) if reverse else (nodes[:-1], nodes[1:])
         keys, eid = edge_of
         return eid[np.searchsorted(keys, a * self.n + b)].tolist()
@@ -195,28 +248,44 @@ class ABEstimator:
         # Gói kết quả một chặng: thời gian (có cộng phí cố định), quãng đường, POI chạy ngang
         L = float(self.length[edges].sum()) if edges else 0.0
         dur = cost_s + self.params["overhead_s"][slot]
-        pts = np.column_stack([self.lat[self.u[edges]], self.lon[self.u[edges]]]) if edges else np.zeros((0, 2))
+        pts = (
+            np.column_stack([self.lat[self.u[edges]], self.lon[self.u[edges]]])
+            if edges
+            else np.zeros((0, 2))
+        )
         passed = []
         if len(pts):
             kx = 111320 * np.cos(np.radians(pts[:, 0]))
-            d = np.hypot((self.poi_xy[:, None, 1] - pts[None, :, 1]) * kx[None, :],
-                         (self.poi_xy[:, None, 0] - pts[None, :, 0]) * 110540)
-            passed = [pid for pid, hit in zip(self.poi_ids, (d <= PASS_RADIUS_M).any(axis=1)) if hit]
+            d = np.hypot(
+                (self.poi_xy[:, None, 1] - pts[None, :, 1]) * kx[None, :],
+                (self.poi_xy[:, None, 0] - pts[None, :, 0]) * 110540,
+            )
+            passed = [
+                pid
+                for pid, hit in zip(self.poi_ids, (d <= PASS_RADIUS_M).any(axis=1))
+                if hit
+            ]
         return {"duration_s": round(dur), "distance_m": round(L), "pois_passed": passed}
 
     def group_lengths(self, edges):
         # Tổng chiều dài theo nhóm đường của một đường đi (dùng khi hiệu chỉnh)
-        return np.bincount(self.group[edges], weights=self.length[edges], minlength=len(GROUPS))
+        return np.bincount(
+            self.group[edges], weights=self.length[edges], minlength=len(GROUPS)
+        )
 
 
 def load_default(pois):
     """Tạo bộ ước lượng từ dữ liệu chặng 1 + vành đai + trục Duy Tân của dự án."""
     import sys
+
     sys.path.insert(0, str(ROOT / "scripts"))
     from fetch_routes import TIME_BANNED_AREAS, corridor_segments
+
     nodes = pd.read_parquet(ROOT / "data" / "stage1" / "nodes_base.parquet")
     edges = pd.read_parquet(ROOT / "data" / "stage1" / "edges_base.parquet")
-    return ABEstimator(nodes, edges, TIME_BANNED_AREAS[0]["polygon"], corridor_segments(), pois)
+    return ABEstimator(
+        nodes, edges, TIME_BANNED_AREAS[0]["polygon"], corridor_segments(), pois
+    )
 
 
 def ab_rows(est, a, b, slots=SLOTS, scores=None):
@@ -234,26 +303,66 @@ def ab_rows(est, a, b, slots=SLOTS, scores=None):
         ban = slot in BAN_SLOTS
         a_bad = ban and est.endpoint_banned(a["lat"], a["lon"])
         b_bad = ban and est.endpoint_banned(b["lat"], b["lon"])
-        poi_nodes = {pid: est.snap(*poi_xy[pid], slot)[0] for pid in est.poi_ids
-                     if not (ban and est.endpoint_banned(*poi_xy[pid]))}
-        out_legs = est.legs([na], list(poi_nodes.values()) + [nb], slot) if not a_bad else {}
-        in_legs = est.legs(list(poi_nodes.values()), [nb], slot, reverse=True) if not b_bad else {}
+        poi_nodes = {
+            pid: est.snap(*poi_xy[pid], slot)[0]
+            for pid in est.poi_ids
+            if not (ban and est.endpoint_banned(*poi_xy[pid]))
+        }
+        out_legs = (
+            est.legs([na], list(poi_nodes.values()) + [nb], slot) if not a_bad else {}
+        )
+        in_legs = (
+            est.legs(list(poi_nodes.values()), [nb], slot, reverse=True)
+            if not b_bad
+            else {}
+        )
 
         def row(src, dst, s_type, d_type, leg):
             rec = est.leg_record(leg[0], leg[1], slot) if leg else None
             skip = {src["id"], dst["id"]}
-            return {"from_id": src["id"], "to_id": dst["id"], "from_type": s_type, "to_type": d_type,
-                    "from_lat": src["lat"], "from_lon": src["lon"], "to_lat": dst["lat"], "to_lon": dst["lon"],
-                    "to_poi_score": scores.get(dst["id"], 0.0), "slot": slot,
-                    "duration_s": rec["duration_s"] if rec else 0, "distance_m": rec["distance_m"] if rec else 0,
-                    "feasible": int(rec is not None),
-                    "pois_passed": ";".join(q for q in rec["pois_passed"] if q not in skip) if rec else "",
-                    "through_ring": 0}
-        for pid in est.poi_ids:                       # POI nằm sâu trong vành đai lúc cấm → dòng feasible = 0
+            return {
+                "from_id": src["id"],
+                "to_id": dst["id"],
+                "from_type": s_type,
+                "to_type": d_type,
+                "from_lat": src["lat"],
+                "from_lon": src["lon"],
+                "to_lat": dst["lat"],
+                "to_lon": dst["lon"],
+                "to_poi_score": scores.get(dst["id"], 0.0),
+                "slot": slot,
+                "duration_s": rec["duration_s"] if rec else 0,
+                "distance_m": rec["distance_m"] if rec else 0,
+                "feasible": int(rec is not None),
+                "pois_passed": ";".join(q for q in rec["pois_passed"] if q not in skip)
+                if rec
+                else "",
+                "through_ring": 0,
+            }
+
+        for (
+            pid
+        ) in est.poi_ids:  # POI nằm sâu trong vành đai lúc cấm → dòng feasible = 0
             node = poi_nodes.get(pid)
             poi = {"id": pid, "lat": poi_xy[pid][0], "lon": poi_xy[pid][1]}
-            rows.append(row(a, poi, "point", "poi", out_legs.get((na, node)) if node is not None else None))
-            rows.append(row(poi, b, "poi", "point", in_legs.get((node, nb)) if node is not None else None))
+            rows.append(
+                row(
+                    a,
+                    poi,
+                    "point",
+                    "poi",
+                    out_legs.get((na, node)) if node is not None else None,
+                )
+            )
+            rows.append(
+                row(
+                    poi,
+                    b,
+                    "poi",
+                    "point",
+                    in_legs.get((node, nb)) if node is not None else None,
+                )
+            )
         rows.append(row(a, b, "point", "point", out_legs.get((na, nb))))
     return rows
 
@@ -262,7 +371,14 @@ def sample_points(est, n, rng, bbox=(15.84, 107.95, 16.16, 108.36)):
     """Lấy n điểm ngẫu nhiên trên đường xe lớn vào được, trong vùng phục vụ (Đà Nẵng – Hội An – Bà Nà).
     Dùng làm A, B ngẫu nhiên khi train."""
     s, w, nlat, e = bbox
-    cand = est.snap_nodes[(est.lat[est.snap_nodes] >= s) & (est.lat[est.snap_nodes] <= nlat)
-                          & (est.lon[est.snap_nodes] >= w) & (est.lon[est.snap_nodes] <= e)]
+    cand = est.snap_nodes[
+        (est.lat[est.snap_nodes] >= s)
+        & (est.lat[est.snap_nodes] <= nlat)
+        & (est.lon[est.snap_nodes] >= w)
+        & (est.lon[est.snap_nodes] <= e)
+    ]
     pick = rng.choice(cand, size=n, replace=False)
-    return [{"id": f"X{i:04d}", "lat": float(est.lat[k]), "lon": float(est.lon[k])} for i, k in enumerate(pick)]
+    return [
+        {"id": f"X{i:04d}", "lat": float(est.lat[k]), "lon": float(est.lon[k])}
+        for i, k in enumerate(pick)
+    ]

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias
 
-from typing_extensions import TypeAliasType, TypedDict
+from typing_extensions import NotRequired, TypeAliasType, TypedDict
 
-AlgorithmName: TypeAlias = Literal["alns", "vns", "aco", "dijkstra"]
+AlgorithmName: TypeAlias = Literal[
+    "alns", "vns", "aco", "dijkstra", "ppo", "ppo_waypoint"
+]
 RunStatus: TypeAlias = Literal["running", "result", "error", "stopped"]
 GraphStatus: TypeAlias = Literal["loading", "ready", "error"]
 Coordinate: TypeAlias = tuple[float, float]
@@ -29,19 +31,44 @@ class RouteReference(TypedDict):
     route: list[str]
 
 
+class LineGeometry(TypedDict):
+    """GeoJSON geometry for the road route."""
+
+    type: Literal["LineString"]
+    coordinates: list[Coordinate]
+
+
+class RoadInstruction(TypedDict):
+    """Estimated manoeuvre and distance along a road."""
+
+    action: str
+    road: str
+    distance_m: float
+    coordinate: Coordinate
+    coordinates: list[Coordinate]
+
+
 class RouteSnapshot(RouteReference):
-    """Serialized route and its matrix-derived objective values.
+    """Serialized road route and its measured values.
 
     Attributes:
         route: Ordered point IDs from start through destination.
         score: Score of unique selected and passed POIs.
-        duration_min: Elapsed travel time in minutes.
+        distance_km: Total unpenalized road distance in kilometres.
         collected: Sorted unique POI IDs credited to the route.
+        geometry: Approximate road geometry between graph nodes.
+        narrow_m: Length of roads with a known width below 5.5 metres.
+        unknown_width_m: Length of roads without an unambiguous width.
     """
 
     score: float
+    distance_km: float
     duration_min: float
     collected: list[str]
+    geometry: LineGeometry
+    narrow_m: float
+    unknown_width_m: float
+    instructions: list[RoadInstruction]
 
 
 class SearchParameters(TypedDict):
@@ -51,19 +78,21 @@ class SearchParameters(TypedDict):
         algorithm: Solver key accepted by the web application.
         start: Starting point ID in the selected matrix.
         end: Distinct destination ID in the selected matrix.
+        budget_min: Positive estimated travel-time budget in minutes.
         departure: Local departure time in HH:MM format.
-        budget_min: Positive travel-time budget in minutes.
-        iterations: Search iterations; ignored by Dijkstra.
-        seed: Reproducible random seed; ignored by Dijkstra.
+        iterations: Search iterations used by ALNS, VNS and ACO.
+        seed: Reproducible random seed used by ALNS, VNS and ACO.
+        checkpoint: Saved ZIP checkpoint for the selected PPO solver.
     """
 
     algorithm: AlgorithmName
     start: str
     end: str
-    departure: str
     budget_min: float
+    departure: str
     iterations: int
     seed: int
+    checkpoint: NotRequired[str | None]
 
 
 class RunStatusPayload(TypedDict):
@@ -71,7 +100,7 @@ class RunStatusPayload(TypedDict):
 
     Attributes:
         status: Running, successful, failed, or cancelled computation.
-        result: Complete matrix-evaluated route after success, otherwise None.
+        result: Completed road route after success, otherwise None.
         message: Failure explanation, otherwise None.
     """
 
@@ -89,6 +118,8 @@ class PointMetadata(TypedDict):
     lon: float
     kind: str
     score: float
+    routing_available: NotRequired[bool]
+    snap_distance_m: NotRequired[float]
 
 
 class GraphStatusPayload(TypedDict):

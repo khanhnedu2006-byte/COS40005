@@ -1,119 +1,71 @@
-# Web application architecture
+# Web application
 
-## Source layout
+Run `python -m Web` from an editable checkout to open the local MapLibre map.
+Use `--port 8001 --no-browser` to choose another port without opening a browser.
+Map tiles and labels require internet access; solver data is local.
 
-```text
-Web/
-  __main__.py             python -m Web entry point
-  serve_orienteering.py   launcher, browser opening, loopback server
-  app.py                 validation, isolated jobs, cache lifecycle, REST API
-  road_paths.py          coordinates and directed OSM reconstruction
-  types.py               typed Python request/result/response contracts
-  assets/
-    index.html           inputs, map, final-route guide
-    app.js               job polling, map interaction and final-route rendering
-    contracts.js         matching JSDoc contracts; no runtime import
-    app.css              responsive visual layout
-    vendor/              pinned MapLibre distribution and license
-```
+## Road search
 
-The core algorithms remain in `src/busroute/routing/`. `Web` is an installable
-root-level package alongside the existing `src` packages. Use the checkout's
-editable installation (`uv run` or `pip install -e '.[web]'`): browser assets
-are package data; routing data and configuration remain in the checkout.
+Choose Dijkstra, ALNS, VNS, ACO, edge PPO or Waypoint PPO with distinct configured endpoints and a minute
+budget and departure time. Defaults are 240 minutes, 08:00, 100 iterations and seed 0. Dijkstra compares candidate connections by estimated travel time. ALNS, VNS and ACO maximize unique POI score within that time, preferring
+lower narrow-road-weighted distance when scores tie. Known widths below 5.5 m
+receive 2× cost for this tie-break; unknown widths remain unpenalized.
+Both PPO solvers use saved SB3 ZIP checkpoints for deterministic inference.
+Edge PPO defaults to `checkpoints/ppo_road.zip`. Waypoint PPO uses
+`checkpoints/ppo_waypoint.zip`, with Dijkstra legs connecting its chosen POIs
+and a verified continuation to the destination. See the
+[edge PPO training guide](ppo-road.md) and [Waypoint PPO commands](algorithms.md#waypoint-ppo).
 
-## Final-only data flow
+Each isolated worker loads the complete base graph once. Dijkstra, ALNS, VNS and
+ACO build slot-specific directed Dijkstra trees for the selected sources. POI connections, their edge IDs and
+passed-POI masks are cached for search trials. A POI detour A → P → B uses two
+connections even if the direct A → B connection skips P. The destination cannot
+be crossed before the final leg. The solver caches one path per point pair and
+traffic slot and compares their actual replay times when a trip crosses slots.
 
-```mermaid
-flowchart LR
-    Form[Browser inputs] --> API[FastAPI validation]
-    API --> Worker[Spawned solver process]
-    Worker --> Result[Single terminal outcome]
-    Result --> Poll[Browser status polling]
-    Poll --> Guide[Final itinerary and totals]
-    Guide --> Map[MapLibre final route]
-    OSM[Background OSM graph load] --> Cache[Directed leg cache]
-    Guide --> Geometry[Final-route leg requests]
-    Geometry --> Cache
-    Cache --> Map
-```
+Inputs are `data/stage1/nodes_base.parquet`, `edges_base.parquet`,
+`data/final/duong_pho_clean.csv`, and `configs/pois.py` / `hubs.py`.
+Points beyond the 300 m road-node snapping limit stay on the map with an
+explanation but are disabled as endpoints and excluded as inserted waypoints.
+POIs earn score once within 100 m of the approximate road geometry; selecting a
+waypoint does not automatically award its score.
 
-Location metadata loads before the graph. One background initializer loads or
-fetches the configured graph and snaps matrix locations to it. The map and form
-stay usable while road geometry initializes. Geometry requests run off the API
-loop and serialize access to the shared path cache.
+## Process and HTTP contracts
 
-One solver process runs at a time. Detailed tracing is disabled; lightweight
-progress callbacks only check cancellation and immediately discard their data.
-The child queues exactly one completed result or error. The parent retains only
-status, final result and failure message: there is no event history, SSE stream,
-operator visualization, chart or playback loop in the web app.
+Only one job runs at a time. Cancel sets a cooperative flag, with bounded process
+termination as fallback. A completed result is preserved if Cancel arrives later.
+Only a final outcome is retained; no search history or animation is recorded.
 
-The browser polls the current run every 350 ms while connected and retries
-interrupted requests after 1.5 seconds. Terminal results stop polling. The latest
-run remains in memory until replaced; old run URLs then return 404. Downloading
-its JSON first preserves the result independently.
+- `GET /api/bootstrap`: configured markers, snapping availability, defaults and status.
+- `GET /api/status`: road-data readiness, failure reason and startup timing.
+- `POST /api/runs`: `algorithm`, `start`, `end`, `budget_min`, `departure`, `iterations`, `seed`, optional `checkpoint`.
+  Solver keys are `dijkstra`, `alns`, `vns`, `aco`, `ppo` and `ppo_waypoint`.
+  Both PPO solvers require `checkpoint`.
+  Kilometre-budget fields are rejected.
+  Invalid inputs give 422, overlapping runs 409, unavailable road data 503.
+- `GET /api/runs/{id}`: `{status, result, message}`. Terminal states are `result`,
+  `error` and `stopped`; running/error/stopped results are null.
+- `POST /api/runs/{id}/stop`: cancel or return the already-completed status.
+- `GET /api/runs/{id}/result`: download the complete JSON result after success.
 
-Cancel sets a cooperative flag, with bounded process termination as fallback.
-Shutdown stops the current worker. Closing the page sends a best-effort stop.
-A successful result that completed before cancellation remains successful.
+The browser polls every 350 ms, with 1.5-second retries after network failure.
+Replacing a job makes its old run URLs return 404. Python contracts are defined
+in `Web/types.py`; corresponding browser contracts are in `assets/contracts.js`.
+The old OD-matrix CLI/native-viewer interfaces remain independent.
 
-## Typed contracts and units
+## Completed route
 
-`Web/types.py` defines solver names, parameters, route snapshots and HTTP
-payloads. `Web/assets/contracts.js` documents the matching browser shapes.
-Python signatures and mutable state are annotated; Google-style docstrings
-cover arguments, returns and failures. `/docs` and `/openapi.json` expose the
-API reference. The recursive JSON type has a runtime alias for boundary GeoJSON.
+The final snapshot includes selected waypoint IDs, `duration_min`, `distance_km`, unique score,
+collected POIs, LineString geometry, known-narrow/unknown-width lengths and road
+instructions. Geometry, metrics and directions all derive from the same cached
+edge sequence. Numbered waypoint buttons and road directions focus the map.
+Passed POIs are highlighted in gold; their names appear in the guide.
 
-- Solver keys: `alns`, `vns`, `aco`, `dijkstra`.
-- API budgets and result durations: minutes; core budgets: seconds.
-- Departures: local `HH:MM`, converted to minutes after midnight.
-- Loaded coordinates: `(latitude, longitude)`; GeoJSON: `(longitude, latitude)`.
-- Missing geometry: `null`, with a reason; never a synthetic straight line.
+Road shapes are approximated by lines between graph nodes because the base
+Parquet tables omit edge curves. Turn instructions use those chords and are
+explicitly labeled as estimates. Travel time uses the historical road-class × slot coefficients calibrated to TomTom. Each edge uses its own departure slot, sharing the clock between PPO and the other road solvers. Live traffic, dwell times and legal bus restrictions are not modeled. The central-ring overlay supplies context only.
 
-## HTTP endpoints
-
-- `GET /` and `/assets/`: application and bundled assets.
-- `GET /api/bootstrap`: matrix locations, defaults, ring boundary and status.
-- `GET /api/status`: graph readiness, initialization timing and cache diagnostics.
-- `POST /api/geometry`: `legs: [[from_id, to_id], ...]`, at most 200 pairs.
-  Returns MultiLineString geometries or explicit missing-path explanations.
-  Reversed pairs have separate cache keys.
-- `POST /api/runs`: validated inputs; returns a new run ID. Active computation
-  causes HTTP 409; unknown locations or invalid parameters cause HTTP 422.
-- `GET /api/runs/{id}`: `{status, result, message}`. Status is `running`,
-  `result`, `error`, or `stopped`. Only success supplies a final route;
-  failure supplies a message. Running/cancelled responses have no route.
-- `POST /api/runs/{id}/stop`: cancel and return terminal/already-completed status.
-- `GET /api/runs/{id}/result`: download `route.json` after success; otherwise 409.
-
-The former `/events` endpoint has been removed. The CLI and optional native
-viewer retain their own progress facilities; the core solvers are unchanged.
-
-## Completed-route guide
-
-Success immediately opens a Google Maps-style itinerary: endpoint names,
-algorithm, departure and budget, total travel time, stop count, POI score, and
-an ordered list with numbered start/intermediate/destination stops. These same
-numbers appear on the map. Select a stop or use Previous/Next to focus it and
-highlight its marker. Fit route changes the camera explicitly; receiving the
-result or its road geometry preserves the current viewport. Edit search opens
-the input panel; starting a new accepted run clears the previous result.
-
-Only one blue final-route overlay is displayed. The map retains the basemap,
-location markers, central ring and final numbered stops. Geometry requests are
-batched, deduplicated and cached. A run generation and render token prevent old
-asynchronous responses from replacing a newer run. Existing map sources update
-without rebuilding the map.
-
-The itinerary is available even while roads load or geometry fails. Missing
-legs are named and left as visible gaps; request failures offer Retry road path.
-Basemap failures have their own explicit notice and Retry map action. Failed or
-cancelled searches do not create an itinerary. On mobile the guide becomes a
-scrollable bottom sheet; opening it collapses settings to leave map space.
-
-The guide describes planned stops, not street-by-street navigation. Travel time
-excludes visits, and credited POIs can include locations passed along legs that
-are not explicit stops. All totals come from the OD matrix; OSM road paths are
-approximate reconstructions.
+Road instructions appear above the waypoint list. Each instruction retains its
+exact section of the approximate route geometry: selecting it highlights that
+section in gold and fits it on the map. Clicking the blue route selects the
+corresponding instruction and opens its road name. Unnamed roads stay explicit.

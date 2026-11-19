@@ -33,8 +33,14 @@ class _Search:
         trace: Also emit selected operator actions for live visualization.
     """
 
-    def __init__(self, *, iterations: int = 100, seed: int = 0,
-                 progress: Callable | None = None, trace: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        iterations: int = 100,
+        seed: int = 0,
+        progress: Callable | None = None,
+        trace: bool = False,
+    ) -> None:
         self._check(iterations)
         self.iterations = iterations
         self.seed = seed
@@ -49,19 +55,34 @@ class _Search:
             self._iteration = 0
         if self.progress is not None:
             self._sequence += 1
-            self.progress({"version": 1, "sequence": self._sequence,
-                           "event": event, **fields})
+            self.progress(
+                {"version": 1, "sequence": self._sequence, "event": event, **fields}
+            )
 
-    def _log_best(self, event: str, iteration: int, best: RouteResult, **fields) -> None:
-        self._log(event, iteration=iteration, iterations=self.iterations,
-                  best_score=best.score, best_duration_min=best.duration_s / 60,
-                  best=best.to_dict(), **fields)
+    def _log_best(
+        self, event: str, iteration: int, best: RouteResult, **fields
+    ) -> None:
+        self._log(
+            event,
+            iteration=iteration,
+            iterations=self.iterations,
+            best_score=best.score,
+            best_duration_min=best.duration_s / 60,
+            best=best.to_dict(),
+            **fields,
+        )
 
     def _move(self, action: str, result: RouteResult, **fields) -> None:
         """Emit selected operator actions, never individual trial evaluations."""
         if self.trace:
-            self._log("operator", iteration=self._iteration, iterations=self.iterations,
-                      action=action, candidate=result.to_dict(), **fields)
+            self._log(
+                "operator",
+                iteration=self._iteration,
+                iterations=self.iterations,
+                action=action,
+                candidate=result.to_dict(),
+                **fields,
+            )
 
     @staticmethod
     def _quality(result: RouteResult) -> tuple[float, float]:
@@ -202,9 +223,12 @@ class ALNS(_Search):
             destroy = rng.choices(range(2), weights=destroy_weights)[0]
             repair = rng.choices(range(2), weights=repair_weights)[0]
             count = rng.randint(1, max(1, min(4, len(current.route) - 2)))
-            self._move("destroy", current,
-                       destroy_operator="worst" if destroy else "random",
-                       repair_operator="randomized" if repair else "greedy")
+            self._move(
+                "destroy",
+                current,
+                destroy_operator="worst" if destroy else "random",
+                repair_operator="randomized" if repair else "greedy",
+            )
             partial = self._remove(
                 matrix, current, start_minute, budget_s, rng, count, bool(destroy)
             )
@@ -225,9 +249,16 @@ class ALNS(_Search):
             reward = 5.0 if improved_best else 2.0 if improved_current else 0.5
             destroy_weights[destroy] = 0.8 * destroy_weights[destroy] + 0.2 * reward
             repair_weights[repair] = 0.8 * repair_weights[repair] + 0.2 * reward
-            self._log_best("iteration", iteration + 1, best, current=current.to_dict(),
-                           candidate=candidate.to_dict(), accepted=accepted,
-                           improved_best=improved_best, temperature=temperature)
+            self._log_best(
+                "iteration",
+                iteration + 1,
+                best,
+                current=current.to_dict(),
+                candidate=candidate.to_dict(),
+                accepted=accepted,
+                improved_best=improved_best,
+                temperature=temperature,
+            )
         self._log_best("search_end", self.iterations, best)
         return best
 
@@ -272,7 +303,9 @@ class AntColony(_Search):
                         route = list(current.route)
                         route.insert(index, poi)
                         candidate = matrix.evaluate(route, start_minute, budget_s)
-                        if candidate is None or self._quality(candidate) <= self._quality(current):
+                        if candidate is None or self._quality(
+                            candidate
+                        ) <= self._quality(current):
                             continue
                         gain = candidate.score - current.score
                         extra = max(candidate.duration_s - current.duration_s, 1.0)
@@ -291,10 +324,21 @@ class AntColony(_Search):
                 pheromone[edge] = max(0.1, trail * 0.9)
             for edge in zip(best.route, best.route[1:]):
                 pheromone[edge] = pheromone.get(edge, 1.0) + 1.0
-            self._move("pheromone_update", best, best=best.to_dict(),
-                       evaporation=0.9, pheromone_edges=len(pheromone))
-            self._log_best("iteration", iteration + 1, best, current=current.to_dict(),
-                           candidate=current.to_dict(), improved_best=improved_best)
+            self._move(
+                "pheromone_update",
+                best,
+                best=best.to_dict(),
+                evaporation=0.9,
+                pheromone_edges=len(pheromone),
+            )
+            self._log_best(
+                "iteration",
+                iteration + 1,
+                best,
+                current=current.to_dict(),
+                candidate=current.to_dict(),
+                improved_best=improved_best,
+            )
         self._log_best("search_end", self.iterations, best)
         return best
 
@@ -347,9 +391,16 @@ class VNS(_Search):
                 best, neighbourhood = candidate, 1
             else:
                 neighbourhood = neighbourhood % 4 + 1
-            self._log_best("iteration", iteration + 1, best, current=best.to_dict(),
-                           candidate=candidate.to_dict(), accepted=accepted,
-                           improved_best=accepted, neighbourhood=neighbourhood)
+            self._log_best(
+                "iteration",
+                iteration + 1,
+                best,
+                current=best.to_dict(),
+                candidate=candidate.to_dict(),
+                accepted=accepted,
+                improved_best=accepted,
+                neighbourhood=neighbourhood,
+            )
         self._log_best("search_end", self.iterations, best)
         return best
 

@@ -392,14 +392,20 @@ class OnlinePPOSearch(_Search):
     def __call__(self, matrix, start, end, start_minute, budget_s):
         if matrix is not self.features.matrix:
             raise ValueError("PPO features must use the supplied matrix")
-        env = ODTrainingEnv(self.features, scenario=(start, end, start_minute, budget_s))
+        env = ODTrainingEnv(
+            self.features, scenario=(start, end, start_minute, budget_s)
+        )
         # Validate before constructing or changing a model.
         env.reset(seed=self.config.seed)
         if self.model is None:
             self.model = make_model(self.features, env, self.config)
         else:
             self.model.set_env(env)
-        self.model.learn(total_timesteps=self.config.total_steps, reset_num_timesteps=False, callback=self.callback)
+        self.model.learn(
+            total_timesteps=self.config.total_steps,
+            reset_num_timesteps=False,
+            callback=self.callback,
+        )
         result = infer(self.model, self.features, start, end, start_minute, budget_s)
         if result is None:
             raise ValueError("PPO did not find a feasible route")

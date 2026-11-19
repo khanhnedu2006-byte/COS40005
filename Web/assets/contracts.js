@@ -4,21 +4,27 @@
  * This module is imported by JSDoc only. It adds no runtime request or build
  * dependency; Python validates inputs and supplies these payloads over HTTP.
  *
- * @typedef {"alns" | "vns" | "aco" | "dijkstra"} AlgorithmName
+ * @typedef {"dijkstra" | "alns" | "vns" | "aco" | "ppo" | "ppo_waypoint"} AlgorithmName
  *
  * @typedef {Object} SearchParameters
  * @property {AlgorithmName} algorithm - Selected solver.
  * @property {string} start - Matrix start ID.
  * @property {string} end - Distinct destination ID.
- * @property {string} departure - Local HH:MM departure time.
- * @property {number} budget_min - Positive finite travel-time budget.
- * @property {number} iterations - Non-negative count; unused by Dijkstra.
- * @property {number} seed - Random seed; unused by Dijkstra.
+ * @property {number} budget_min - Positive estimated travel-time budget in minutes.
+ * @property {string} departure - Local departure time HH:MM.
+ * @property {number} iterations - Non-negative count for ALNS, VNS and ACO.
+ * @property {number} seed - Random seed for ALNS, VNS and ACO.
+ * @property {string | null} [checkpoint] - Checkpoint path for the chosen PPO solver.
  *
  * @typedef {Object} RouteSnapshot
  * @property {string[]} route - Ordered final-route IDs from start through destination.
  * @property {number} score - Unique selected/passed POI score.
- * @property {number} duration_min - Elapsed travel time in minutes.
+ * @property {number} distance_km - Sum of road-edge lengths.
+ * @property {number} duration_min - Estimated travel time in minutes.
+ * @property {number} narrow_m - Length of confidently matched narrow roads.
+ * @property {number} unknown_width_m - Length without an unambiguous width.
+ * @property {{type: "LineString", coordinates: number[][]}} geometry - Approximate node-to-node geometry.
+ * @property {{action: string, road: string, distance_m: number, coordinate: number[], coordinates: number[][]}[]} instructions - Estimated road changes.
  * @property {string[]} collected - Unique credited POI IDs.
  *
  * @typedef {Object} PointMetadata
@@ -27,7 +33,9 @@
  * @property {number} lat - Latitude in degrees.
  * @property {number} lon - Longitude in degrees.
  * @property {string} kind - Hub, POI, or custom point type.
- * @property {number} score - Matrix score, zero for hubs.
+ * @property {number} score - Configured score, zero for hubs.
+ * @property {boolean} [routing_available] - Within the road-node snapping limit.
+ * @property {number} [snap_distance_m] - Distance to the nearest road node.
  *
  * @typedef {Object} RunStatusPayload
  * @property {"running" | "result" | "error" | "stopped"} status - Computation state.
@@ -72,6 +80,7 @@
  * @property {RouteSnapshot | null} result - The only route displayed.
  * @property {boolean} guideOpen - Whether the final itinerary is visible.
  * @property {number} guideStopIndex - Selected final-route stop, zero-based.
+ * @property {number | null} roadStepIndex - Selected road instruction.
  * @property {string | null} markerSelection - Current endpoint signature.
  * @property {Object} [ring] - Central-ring GeoJSON.
  */

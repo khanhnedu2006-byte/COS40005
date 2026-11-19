@@ -19,11 +19,13 @@ python scripts/normalize_dataset.py --src <raw exports> --out dataset     # Step
 python scripts/run_clean_gps.py --src dataset --out data/interim/gps   # Step 1
 python scripts/build_graph.py   --out data/processed                       # Steps 2–6
 python scripts/train_ppo.py                                               # OD-matrix PPO
+python scripts/ppo_road.py train                                          # Full-road-graph PPO
 pytest                                                                     # Tests
 ```
 
-`build_graph.py` generates road graph files in its output directory. PPO uses
-the OD matrix in `data/final/od_matrix.csv`, rather than those graph files.
+`build_graph.py` generates road graph files in its output directory. The legacy
+`train_ppo.py` uses `data/final/od_matrix.csv`. The new `ppo_road.py` trains on
+the complete base graph in `data/stage1/`; see its commands below.
 
 ## Conventions
 - Variable / function / file names in **English**.
@@ -60,11 +62,10 @@ To open a native OSMnx map window, use the same arguments with
 `scripts/visualize_orienteering.py`:
 
 ```bash
-uv sync --extra visualization
-uv run --extra visualization python scripts/visualize_orienteering.py --algorithm alns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
+python -m pip install -e ".[visualization]"
+python scripts/visualize_orienteering.py --algorithm alns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
 ```
 
-Alternatively, install plotting support with `pip install -e '.[visualization]'`.
 Tkinter and a graphical desktop are required (`python3-tk` on Ubuntu/Debian).
 The window starts the solver automatically; it has pan/zoom, Pause/Resume and
 animation speed controls. Close it to stop. The completed route is printed as
@@ -86,53 +87,132 @@ The application now lives in the root-level [`Web/`](Web/) package. See
 [`documentation/`](documentation/README.md) for algorithms, visualization
 approaches, API contracts, type annotations and verification instructions.
 
-For a street map with location inputs and a final-route guide, run:
+For a street map with location inputs and a final-route guide, use the steps
+below. Only Python and pip are needed for installation; `uv` is not required.
+Use Python 3.10 or newer and open a terminal in the repository root (the folder
+containing `pyproject.toml`). Keep the checkout's `configs/` and `data/` folders
+available, including the base node/edge Parquet files and road-width CSV.
 
 ```bash
-uv run --extra web python -m Web
+python -m venv .venv
+```
+
+Activate the virtual environment using the command for your terminal:
+
+- Windows Command Prompt: `.venv\Scripts\activate.bat`
+- Windows PowerShell: `.\.venv\Scripts\Activate.ps1`
+- Linux/macOS: `source .venv/bin/activate`
+
+If `python` is unavailable on Linux/macOS, use `python3 -m venv .venv` to create
+the environment. If you already created an environment during Setup, activate
+it and skip creating another one.
+
+Install the project with its web dependencies, then launch it:
+
+```bash
+python -m pip install -e ".[web]"
+python -m Web
 ```
 
 This starts a local server at `http://127.0.0.1:8000` and opens your browser.
-Alternatively, use `pip install -e '.[web]'` followed by
-`python -m Web`. No Node.js, frontend build, map account
-or API key is required. MapLibre GL JS 5.24.0 is bundled locally; the OpenFreeMap
+If the browser does not open, visit that address manually. Keep the terminal
+running while using the interface. On subsequent launches, activate the same
+environment and run `python -m Web` from the repository root; installation only
+needs repeating when dependencies change.
+
+No Node.js, frontend build, map account or API key is required.
+MapLibre GL JS 5.24.0 is bundled locally; the OpenFreeMap
 basemap, labels and glyphs require internet access and a WebGL-capable browser.
 
-Choose existing hubs/POIs by searching their IDs or names, or click a map marker
-to set an endpoint. Choose ALNS, VNS, Ant Colony (ACO), or Dijkstra; set departure
-time and travel-time budget, then Find route. The heuristic solvers also use
-iterations and random seed; Dijkstra disables those inputs. Computation runs in
-a separate process, and Cancel stops an active search. Only the completed route
-is displayed; intermediate search states are not recorded or animated by the web
-app. Existing command-line solver commands remain available.
+Choose endpoints from the Start and Destination dropdowns, or click a map marker.
+Select **Dijkstra**, **ALNS**, **VNS**, **ACO**, **PPO — road edges** or **Waypoint PPO**, set a **time budget in minutes**,
+and choose Find route. ALNS, VNS and ACO also accept iterations and a random seed.
+Defaults are 240 minutes, departure 08:00, 100 iterations and seed 0. Cancel stops the isolated solver
+process. Only the final result is displayed.
+The PPO solvers each require a trained ZIP checkpoint. Waypoint PPO chooses
+POIs, and the shared Dijkstra planner drives each leg while reserving enough
+time to reach the destination. See the [training and benchmark commands](documentation/algorithms.md#waypoint-ppo).
 
-The final route opens immediately in a map-linked itinerary with start and
-destination names, travel time, POI score and numbered stops. Click a stop or use
-Previous/Next to locate it on the map. Fit route adjusts the viewport explicitly;
-completion preserves your pan/zoom. Edit search returns to the inputs, and
-Download JSON saves the final matrix-based result.
+The web solvers use `data/stage1/nodes_base.parquet`, `edges_base.parquet`,
+`data/final/duong_pho_clean.csv`, and configured POIs/hubs. Dijkstra, ALNS, VNS and ACO build directed
+POI connections on the full road graph. ALNS, VNS and ACO
+insert POI detours such as A → P → B, retaining them when they improve the score
+within the time budget. Scores count POIs passed along connecting roads once.
+Score ties prefer lower narrow-road-weighted distance, then estimated travel time and physical distance.
+Known widths below 5.5 m have a 2× cost for this tie-break; unknown widths are
+unpenalized. Dijkstra supplies the fastest-estimated-time baseline.
 
-The OSM graph loads once in the background. The API and browser cache directed
-leg geometry across runs. Blue marks the final road path and numbered locations;
-the central-ring boundary provides context. Reconstructed paths may differ from
-the matrix provider's routes; missing road connections are reported without
-substitute lines. Stop order and totals remain available while roads initialize
-or if geometry fails.
+The result includes numbered waypoints, unique POI score, estimated travel time and physical distance,
+highlighted passed POIs, width coverage and estimated road directions. Clicking
+a direction focuses the map at that road change. Download JSON saves the same
+route geometry and metrics. The base tables do not retain road curves, so lines
+between graph nodes and turn directions are approximate. POIs must be within
+100 m of that approximate path to earn score; selecting a waypoint alone does
+not award it. Times are estimates using the historical TomTom-calibrated road-class coefficients in `configs/estimator_params.json`. Each edge time is length × seconds/metre at that edge's departure slot; the clock advances after every edge for all four road solvers. The full graph retains road classes without a calibrated group using the local-road coefficients. No per-connection fixed overhead is added, matching the earlier road-edge dataset builder. Live traffic and legal bus restrictions are not modeled.
 
-Launch options: `--matrix data/final/od_matrix_mock.csv`, `--port 8001`, and
-`--no-browser`. The server holds the current run in memory until replaced or
-restarted; only one search runs at a time. Ctrl+C stops the server and worker.
-If roads fail to initialize, check the server's OSM-cache/network message and
-restart. If tiles fail, check internet access and use Retry map. Automated web
-API tests require `uv sync --extra web --extra test` before running pytest.
+Points more than 300 m from a road node stay visible but cannot be selected as
+endpoints or inserted waypoints. Their map popups explain the snapping limit.
+The previous OD-matrix CLI solvers and desktop viewer remain available with
+their existing minute-based inputs.
 
-PPO learns by simulation for the requested route when no checkpoint is supplied;
+To use another port without opening a browser:
+
+```bash
+python -m Web --port 8001 --no-browser
+```
+
+The server retains the current run until replaced or restarted. Only one run
+can be active at a time. Ctrl+C stops the server and worker. Basemap tiles need
+internet access; use Retry map if tiles fail. API tests require the test extra:
+`python -m pip install -e ".[web,test]"`.
+
+The legacy OD-matrix PPO learns by simulation for the requested route when no checkpoint is supplied;
 `--ppo-steps` controls its learning budget. `--iterations` and `--seed`
 configure ALNS, VNS and ant colony optimisation (ACO), while checkpoint-based PPO uses its trained
 policy for inference. The Dijkstra-style baseline seeks a short feasible route,
 without trying to maximise POI score; it uses time-dependent arrival-minute
 labels and does not model waiting, so it is not guaranteed to find the exact
 shortest route when availability or travel times change between slots.
+
+## PPO training on the full road graph
+
+The road pipeline now uses **Stable-Baselines3 PPO (Torch, CPU)** on all 93,751 base nodes and
+230,749 directed edges. SB3 manages rollouts, GAE and optimizer updates; our
+Gymnasium environment and masked Torch GraphSAGE policy retain edge-level
+routing, time budgets, unique POI rewards and penalties for known widths below
+5.5 m. No dense node-by-node adjacency is stored in observations.
+
+```bash
+python scripts/ppo_road.py train --steps 200000 --threads 4 --checkpoint checkpoints/ppo_road.zip --report results/ppo_road.json
+python scripts/ppo_road.py evaluate --checkpoint checkpoints/ppo_road.zip --report results/ppo_road_eval.json
+python scripts/ppo_road.py infer --checkpoint checkpoints/ppo_road.zip --start H01 --end H02 --departure 08:00 --budget-min 240
+python scripts/ppo_road.py train --resume checkpoints/ppo_road.zip --steps 200000 --checkpoint checkpoints/ppo_road.zip
+```
+
+See the [commented pipeline walkthrough](documentation/ppo-road.md) for the
+module layout, observations, rewards, curriculum, masking, checkpoint lifecycle
+and performance limits. The CLI inherits saved settings on resume. SB3 rounds
+the additional step budget up to whole rollouts. Twenty fixed evaluation trips
+are saved by default and their ordered endpoint pairs excluded from training.
+Failures have no completed-route score. Progress goes to stderr; final JSON
+and optional report files contain the results.
+
+Select **PPO** in the browser and enter the road ZIP path. Successful policy
+edges produce road instructions and highlighted passed POIs. Failed inference
+is reported without a shortest-path fallback. Previous SBX road ZIPs and old Torch `.pt` checkpoints need retraining;
+OD-matrix checkpoints are also incompatible with road checkpoints.
+
+A small correctness run uses `--steps 8 --rollout-steps 8 --batch-size 4
+--epochs 1 --hidden-dim 8 --max-episode-steps 8 --eval-count 0`. CPU execution is
+explicit; `--threads` defaults to four. Embeddings are cached during rollouts
+and inference, then recomputed with gradients for each training minibatch.
+The [guide's CPU smoke comparison](documentation/ppo-road.md#cpu-performance-and-thread-controls)
+measured about 6 seconds for this implementation versus 16 seconds for the
+previous SBX implementation on a 32-interaction run. This is an implementation
+smoke measurement, not a convergence or long-run speed guarantee.
+
+### Legacy OD-matrix solver notes
+
 The `duration_min` field reports travel time in minutes, matching `--budget-min`.
 The mock matrix is not suitable for reporting real results.
 
@@ -164,7 +244,8 @@ exist. Both methods are heuristics and do not guarantee an optimal result.
 
 ## PPO routing on the OD matrix
 
-Install the project dependencies with `pip install -e .`. PPO uses SBX's JAX
+Install the optional legacy dependencies with `pip install -e ".[legacy-od-ppo]"`.
+This OD-only PPO uses SBX's JAX
 implementation, Gymnasium, and a custom masked GraphSAGE actor. The OD
 pipeline reads `data/final/od_matrix.csv` by default. Pass `--matrix PATH` to
 `train_ppo.py`, or before the subcommand in `ppo_routes.py`, to use another matrix.

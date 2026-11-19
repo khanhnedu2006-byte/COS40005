@@ -48,58 +48,35 @@
         <form id="run-form">
           <div class="endpoints">
             <label for="start"
-              >Start<input
-                id="start"
-                name="start"
-                list="start-options"
-                required
-                autocomplete="off"
-                placeholder="Find a hub or POI" /><small id="start-name"></small
+              >Start<select id="start" name="start" required disabled>
+                <option value="">Loading locations…</option></select
+              ><small id="start-name"></small
             ></label>
             <span class="endpoint-connector" aria-hidden="true"></span>
             <label for="end"
-              >Destination<input
-                id="end"
-                name="end"
-                list="end-options"
-                required
-                autocomplete="off"
-                placeholder="Find a hub or POI" /><small id="end-name"></small
+              >Destination<select id="end" name="end" required disabled>
+                <option value="">Loading locations…</option></select
+              ><small id="end-name"></small
             ></label>
-            <datalist id="start-options"></datalist
-            ><datalist id="end-options"></datalist>
           </div>
           <label for="algorithm"
             >Search algorithm<select id="algorithm" name="algorithm">
-              <option value="alns">ALNS — adaptive large neighbourhood</option>
-              <option value="vns">VNS — variable neighbourhood</option>
-              <option value="aco">Ant Colony — pheromone-guided search</option>
-              <option value="dijkstra">Dijkstra — shortest travel time</option>
+              <option value="dijkstra">Dijkstra — estimated fastest connection</option>
+              <option value="alns">ALNS — adaptive neighbourhood search</option>
+              <option value="vns">VNS — variable neighbourhood search</option>
+              <option value="aco">ACO — ant colony optimisation</option>
+              <option value="ppo">PPO — road edges</option>
+              <option value="ppo_waypoint">Waypoint PPO</option>
             </select></label
           >
           <p id="algorithm-objective" class="algorithm-objective">
-            Maximise unique POI score within the time budget.
+            Collect unique POIs within a time budget.
           </p>
           <div class="input-row">
-            <label for="departure"
-              >Departure<input
-                id="departure"
-                name="departure"
-                type="time"
-                value="08:00"
-                required
-            /></label>
-            <label for="budget_min"
-              >Budget <span class="unit">min</span
-              ><input
-                id="budget_min"
-                name="budget_min"
-                type="number"
-                min="0.01"
-                step="any"
-                value="240"
-                required
-            /></label>
+            <label for="departure">Departure<input id="departure" name="departure" type="time" value="08:00" required /></label>
+            <label for="budget_min">Time budget <span class="unit">min</span>
+              <input id="budget_min" name="budget_min" type="number" min="0.01" step="any" value="240" required />
+            </label>
           </div>
           <div class="input-row">
             <label for="iterations"
@@ -122,6 +99,9 @@
                 required
             /></label>
           </div>
+          <label id="checkpoint-field" for="checkpoint" hidden>PPO checkpoint
+            <input id="checkpoint" name="checkpoint" type="text" value="checkpoints/ppo_road.zip" disabled />
+          </label>
           <div id="form-error" class="error" role="alert" hidden></div>
           <div class="run-buttons">
             <button id="run" class="primary" type="submit" disabled>
@@ -157,11 +137,11 @@
         <p id="guide-context"></p>
         <dl class="guide-summary">
           <div>
-            <dt>Travel time</dt>
+            <dt>Estimated time</dt>
             <dd id="guide-duration">—</dd>
           </div>
           <div>
-            <dt>Route stops</dt>
+            <dt>POIs passed</dt>
             <dd id="guide-count">—</dd>
           </div>
           <div>
@@ -170,6 +150,12 @@
           </div>
         </dl>
       </header>
+      <section class="road-directions" aria-labelledby="directions-title">
+        <h3 id="directions-title">Roads along your route</h3>
+        <p>Choose a road below to highlight its path, or click the route line to see its name. Turns are estimates from graph nodes.</p>
+        <p id="road-selected" role="status">Select a road to highlight it on the map.</p>
+        <ol id="road-directions-list"></ol>
+      </section>
       <ol
         id="guide-stops"
         class="guide-stops"
@@ -191,9 +177,7 @@
         <p id="guide-map-note" role="status" hidden></p>
         <p id="guide-collected"></p>
         <p>
-          Choose a numbered stop to locate it. Approximate OSM road paths;
-          travel time and POI score come from the OD matrix. Travel time
-          excludes visits.
+          Road segments are approximated by straight lines between graph nodes. POIs within 100 m are highlighted. Road widths are matched by name and may be unknown. Travel time advances edge by edge using road-class coefficients calibrated to TomTom. Live traffic and bus restrictions are not applied.
         </p>
       </footer>
     </aside>

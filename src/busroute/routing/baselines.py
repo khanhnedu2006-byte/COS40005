@@ -27,8 +27,12 @@ def shortest_path_route(
 
 
 def greedy_poi_route(
-    G: nx.Graph, start: Hashable, end: Hashable, poi_nodes: Iterable[Hashable],
-    budget_s: float, weight: str = "travel_time_morning",
+    G: nx.Graph,
+    start: Hashable,
+    end: Hashable,
+    poi_nodes: Iterable[Hashable],
+    budget_s: float,
+    weight: str = "travel_time_morning",
 ) -> list[Hashable]:
     """Greedily visit POIs by score per travel time before reaching the end.
 

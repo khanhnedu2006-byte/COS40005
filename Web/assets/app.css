@@ -226,7 +226,8 @@ label {
   font-size: 10px;
   font-weight: 400;
   white-space: nowrap;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   text-overflow: ellipsis;
 }
 .input-row {
@@ -503,7 +504,8 @@ label {
   list-style: none;
   margin: 0;
   padding: 12px 12px;
-  overflow: auto;
+  overflow: visible;
+  flex-shrink: 0;
   min-height: 0;
   overscroll-behavior: contain;
 }
@@ -587,6 +589,40 @@ label {
   background: var(--ink);
   border-color: var(--ink);
 }
+.road-directions {
+  min-height: 70px;
+  overflow: visible;
+  flex-shrink: 0;
+  padding: 10px 20px;
+  border-top: 1px solid var(--line);
+}
+.road-directions h3 {
+  margin: 0 0 5px;
+  font-size: 13px;
+}
+.road-directions p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.road-directions ol {
+  margin: 0;
+  padding-left: 22px;
+}
+.road-directions li { padding-left: 3px; }
+.road-directions button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 7px 4px;
+  font-size: 12px;
+}
+.road-directions small { white-space: nowrap; color: var(--muted); }
 .guide-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--line);
@@ -670,3 +706,10 @@ label {
     flex-wrap: wrap;
   }
 }
+
+.road-directions button[aria-current="step"] {
+  background: #fff2d8;
+  border-radius: 5px;
+  color: #724b0b;
+}
+#road-selected { font-weight: 600; color: var(--ink); }

@@ -1,348 +1,294 @@
-"""Exercise final-only solver jobs, cancellation, and geometry API boundaries."""
+"""Road-search API, isolated jobs, cancellation and final-only browser contracts."""
 
-import csv
+import queue
+from pathlib import Path
+from typing import Any
+import re
 import threading
 import time
 
-import networkx as nx
+import pandas as pd
 import pytest
-from shapely.geometry import LineString
-
-pytest.importorskip("fastapi")
-pytest.importorskip("httpx")
 from fastapi.testclient import TestClient
 
-from busroute.routing.metaheuristics import ALNS, VNS, AntColony
-from busroute.routing.od_evaluation import shortest_route
-from busroute.routing.orienteering import ODMatrix
 from Web.app import create_app, search_worker
-from Web.road_paths import RoadPaths
+from busroute.routing.road_dijkstra import find_route
 
 
 @pytest.fixture
-def matrix_path(tmp_path):
-    path = tmp_path / "matrix.csv"
-    points = {
-        "A": (16, 108),
-        "B": (16, 108.003),
-        "P": (16, 108.001),
-        "Q": (16, 108.002),
-    }
-    with path.open("w", newline="", encoding="utf-8-sig") as file:
-        writer = csv.DictWriter(
-            file,
-            fieldnames=[
-                "from_id",
-                "to_id",
-                "from_type",
-                "to_type",
-                "from_lat",
-                "from_lon",
-                "to_lat",
-                "to_lon",
-                "to_poi_score",
-                "slot",
-                "duration_s",
-                "feasible",
-                "pois_passed",
-            ],
-        )
-        writer.writeheader()
-        for a, (lat, lon) in points.items():
-            for b, (blat, blon) in points.items():
-                if a != b:
-                    writer.writerow(
-                        {
-                            "from_id": a,
-                            "to_id": b,
-                            "from_type": "poi" if a in "PQ" else "hub",
-                            "to_type": "poi" if b in "PQ" else "hub",
-                            "from_lat": lat,
-                            "from_lon": lon,
-                            "to_lat": blat,
-                            "to_lon": blon,
-                            "to_poi_score": {"P": 3, "Q": 4}.get(b, 0),
-                            "slot": "morning",
-                            "duration_s": 60,
-                            "feasible": 1,
-                            "pois_passed": "",
-                        }
-                    )
-    return path
-
-
-def graph_loader(points):
-    graph = nx.MultiDiGraph(crs="EPSG:4326")
-    for i, p in enumerate(points):
-        graph.add_node(i, x=p["lon"], y=p["lat"])
-    ids = {p["id"]: i for i, p in enumerate(points)}
-    graph.add_edge(
-        ids["A"],
-        ids["P"],
-        length=120,
-        geometry=LineString([(108, 16), (108.0005, 16.0002), (108.001, 16)]),
+def road_data(tmp_path):
+    nodes = pd.DataFrame(
+        [(0, 16.0, 108.0), (1, 16.0, 108.006), (2, 16.003, 108.003)],
+        columns=["node_idx", "lat", "lon"],
     )
-    return RoadPaths(graph, {p["id"]: (p["lat"], p["lon"]) for p in points})
+    edges = pd.DataFrame(
+        [(0, 1, "Direct", 600), (0, 2, "To P", 450), (2, 1, "From P", 450)],
+        columns=["from_idx", "to_idx", "road_name", "length_m"],
+    )
+    files = tuple(
+        tmp_path / filename
+        for filename in ["nodes.parquet", "edges.parquet", "widths.csv"]
+    )
+    nodes.to_parquet(files[0])
+    edges.to_parquet(files[1])
+    files[2].write_text(
+        "Tên đường,Chiều rộng mặt (m)\nDirect,4\nTo P,8\nFrom P,8\n",
+        encoding="utf-8-sig",
+    )
+    points = [
+        dict(id=id, name=id, kind=kind, score=score, lat=lat, lon=lon)
+        for id, kind, score, lat, lon in [
+            ("A", "hub", 0, 16.0, 108.0),
+            ("B", "hub", 0, 16.0, 108.006),
+            ("P", "poi", 5, 16.003, 108.003),
+            ("Far", "poi", 9, 17.0, 109.0),
+        ]
+    ]
+    return files, points
+
+
+def make_app(data):
+    files, points = data
+    return create_app(
+        nodes_path=files[0], edges_path=files[1], widths_path=files[2], points=points
+    )
 
 
 @pytest.fixture
-def client(matrix_path):
-    with TestClient(create_app(matrix_path, graph_loader=graph_loader)) as session:
+def client(road_data):
+    with TestClient(make_app(road_data)) as session:
         yield session
-
-
-def wait_for_result(client, run_id):
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
-        response = client.get(f"/api/runs/{run_id}")
-        assert response.status_code == 200
-        outcome = response.json()
-        assert set(outcome) == {"status", "result", "message"}
-        if outcome["status"] != "running":
-            return outcome
-        assert outcome["result"] is None
-        time.sleep(0.02)
-    pytest.fail("solver did not finish")
 
 
 def request(**changes):
     return {
-        "start": "A",
-        "end": "B",
-        "algorithm": "alns",
-        "departure": "08:00",
-        "budget_min": 3,
-        "iterations": 3,
-        "seed": 7,
+        **dict(
+            start="A",
+            end="B",
+            algorithm="alns",
+            budget_min=6,
+            departure="08:00",
+            iterations=5,
+            seed=7,
+        ),
         **changes,
     }
 
 
-def wait_for_graph(client):
+def wait_for_result(client, id):
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        status = client.get("/api/status").json()
-        if status["graph"] != "loading":
-            return status
+        response = client.get("/api/runs/" + id)
+        assert response.status_code == 200
+        result = response.json()
+        if result["status"] != "running":
+            return result
+        assert result["result"] is None
         time.sleep(0.02)
-    pytest.fail("graph did not initialize")
+    pytest.fail("solver did not finish")
 
 
-@pytest.mark.parametrize(
-    "algorithm,iterations",
-    [
-        ("alns", 3),
-        ("vns", 3),
-        ("aco", 3),
-        ("dijkstra", 3),
-        ("alns", 0),
-        ("aco", 0),
-    ],
-)
-def test_final_result_matches_core_solver(client, matrix_path, algorithm, iterations):
-    params = request(algorithm=algorithm, iterations=iterations)
+@pytest.mark.parametrize("algorithm", ["dijkstra", "alns", "vns", "aco"])
+def test_final_result_matches_core_solver_and_download(client, road_data, algorithm):
+    params = request(algorithm=algorithm)
     response = client.post("/api/runs", json=params)
     assert response.status_code == 201
-    run_id = response.json()["id"]
-    outcome = wait_for_result(client, run_id)
-    assert outcome["status"] == "result" and outcome["message"] is None
-    matrix = ODMatrix.from_csv(matrix_path)
-    if algorithm == "dijkstra":
-        expected = shortest_route(matrix, "A", "B", 480, 180)
-    else:
-        solver = {"alns": ALNS, "vns": VNS, "aco": AntColony}[algorithm]
-        expected = solver(iterations=iterations, seed=7)(matrix, "A", "B", 480, 180)
-    assert outcome["result"] == expected.to_dict()
-    assert client.get(f"/api/runs/{run_id}/result").json() == expected.to_dict()
-    assert client.get(f"/api/runs/{run_id}").json() == outcome
-    assert client.get(f"/api/runs/{run_id}/events").status_code == 404
+    id = response.json()["id"]
+    outcome = wait_for_result(client, id)
+    assert outcome["status"] == "result", outcome
+    files, points = road_data
+    expected = find_route(
+        *files,
+        points,
+        "A",
+        "B",
+        algorithm=algorithm,
+        budget_min=6,
+        departure="08:00",
+        iterations=5,
+        seed=7,
+    )
+    assert outcome["result"] == expected
+    assert client.get(f"/api/runs/{id}/result").json() == expected
+    assert client.get(f"/api/runs/{id}").json() == outcome
+    assert client.get(f"/api/runs/{id}/events").status_code == 404
     assert not hasattr(client.app.state.lab.run, "events")
-    next_id = client.post("/api/runs", json=params).json()["id"]
-    assert wait_for_result(client, next_id) == outcome
+    assert "instructions" in expected and "geometry" in expected
+    assert expected["route"] == (
+        ["A", "B"] if algorithm == "dijkstra" else ["A", "P", "B"]
+    )
+
+
+def test_trained_road_ppo_checkpoint_in_web(
+    client: TestClient,
+    road_data: tuple[tuple[Path, Path, Path], list[dict[str, Any]]],
+    tmp_path: Path,
+) -> None:
+    """Verify an SB3 road ZIP loads through the web worker and shared renderer."""
+    pytest.importorskip("stable_baselines3")
+    from busroute.routing.road_graph import RoadGraph
+    from busroute.routing.ppo_road import RoadFeatures, RoadPPOConfig, train
+
+    files, points = road_data
+    features = RoadFeatures(RoadGraph.from_files(*files, points))
+    path = tmp_path / "road.zip"
+    train(
+        features,
+        RoadPPOConfig(
+            total_steps=4,
+            rollout_steps=4,
+            minibatch_size=2,
+            epochs=1,
+            hidden_dim=8,
+            max_episode_steps=12,
+        ),
+        path,
+    )
+    params = request(algorithm="ppo", checkpoint=str(path))
+    response = client.post("/api/runs", json=params)
+    assert response.status_code == 201
+    outcome = wait_for_result(client, response.json()["id"])
+    assert outcome["status"] == "result", outcome
+    assert outcome["result"] == find_route(
+        *files,
+        points,
+        "A",
+        "B",
+        algorithm="ppo",
+        checkpoint=path,
+        budget_min=6,
+        departure="08:00",
+    )
+    assert outcome["result"]["instructions"]
 
 
 @pytest.mark.parametrize(
     "changes",
     [
+        {"algorithm": "unknown"},
         {"algorithm": "ppo"},
+        {"algorithm": "ppo_waypoint"},
         {"start": "unknown"},
         {"end": "A"},
-        {"departure": "25:00"},
-        {"departure": "09:60"},
+        {"start": "Far"},
         {"budget_min": 0},
+        {"budget_min": -1},
+        {"budget_min": "Infinity"},
         {"iterations": -1},
         {"iterations": 1.2},
         {"seed": "oops"},
+        {"departure": "25:00"},
+        {"departure": "08:99"},
+        {"budget_km": 30},
     ],
 )
 def test_invalid_input(client, changes):
     assert client.post("/api/runs", json=request(**changes)).status_code == 422
 
 
-def test_one_process_at_a_time_stop_and_repeat(client):
-    run_id = client.post("/api/runs", json=request(iterations=100000)).json()["id"]
+def test_stop_conflict_and_repeat(client):
+    id = client.post("/api/runs", json=request(iterations=1000000)).json()["id"]
     assert client.post("/api/runs", json=request()).status_code == 409
-    assert client.get(f"/api/runs/{run_id}/result").status_code == 409
-    response = client.post(f"/api/runs/{run_id}/stop")
-    assert response.status_code == 200 and response.json()["status"] == "stopped"
-    assert wait_for_result(client, run_id) == {
-        "status": "stopped",
-        "result": None,
-        "message": None,
-    }
-    next_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
-    assert wait_for_result(client, next_id)["status"] == "result"
-    assert client.get(f"/api/runs/{run_id}/result").status_code == 404
-
-
-def test_geometry_preserves_curves_and_caches_missing_directions(client):
-    assert wait_for_graph(client)["graph"] == "ready"
-    body = {"legs": [["A", "P"], ["P", "A"], ["A", "P"]]}
-    response = client.post("/api/geometry", json=body)
-    legs = response.json()["legs"]
-    assert len(legs) == 2
-    assert legs[0]["geometry"]["coordinates"][0][1] == [108.0005, 16.0002]
-    assert legs[1]["geometry"] is None and legs[1]["message"]
-    assert client.post("/api/geometry", json=body).json() == response.json()
-    status = client.get("/api/status").json()
-    assert status["cached_legs"] == 2 and status["graph_loads"] == 1
-    assert (
-        client.post("/api/geometry", json={"legs": [["unknown", "A"]]}).status_code
-        == 422
+    assert client.get(f"/api/runs/{id}/result").status_code == 409
+    assert client.post(f"/api/runs/{id}/stop").json()["status"] == "stopped"
+    assert wait_for_result(client, id) == dict(
+        status="stopped", result=None, message=None
     )
-
-
-def test_graph_failure_does_not_hide_inputs_or_break_solver(matrix_path):
-    def failed(_):
-        raise RuntimeError("test graph unavailable")
-
-    with TestClient(create_app(matrix_path, graph_loader=failed)) as client:
-        assert wait_for_graph(client)["graph"] == "error"
-        assert len(client.get("/api/bootstrap").json()["points"]) == 4
-        assert (
-            client.post("/api/geometry", json={"legs": [["A", "B"]]}).status_code == 503
-        )
-        run_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
-        assert wait_for_result(client, run_id)["status"] == "result"
-
-
-def test_loading_graph_does_not_block_inputs_or_computation(matrix_path):
-    release = threading.Event()
-
-    def slow_loader(_):
-        release.wait(timeout=10)
-
-    try:
-        with TestClient(create_app(matrix_path, graph_loader=slow_loader)) as client:
-            bootstrap = client.get("/api/bootstrap").json()
-            assert bootstrap["status"]["graph"] == "loading"
-            run_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
-            assert wait_for_result(client, run_id)["status"] == "result"
-            assert (
-                client.post("/api/geometry", json={"legs": [["A", "B"]]}).status_code
-                == 503
-            )
-            release.set()
-            assert wait_for_graph(client)["graph_loads"] == 1
-    finally:
-        release.set()
-
-
-def test_infeasible_search_reports_error_and_can_be_replaced(client):
-    run_id = client.post("/api/runs", json=request(budget_min=0.1)).json()["id"]
-    outcome = wait_for_result(client, run_id)
-    assert outcome["status"] == "error" and "initial route" in outcome["message"]
-    assert outcome["result"] is None
-    assert client.get(f"/api/runs/{run_id}/result").status_code == 409
     next_id = client.post("/api/runs", json=request(iterations=0)).json()["id"]
+    assert wait_for_result(client, next_id)["status"] == "result"
+    assert client.get(f"/api/runs/{id}/result").status_code == 404
+
+
+def test_infeasible_route_reports_error_then_allows_new_run(client):
+    id = client.post("/api/runs", json=request(budget_min=0.1)).json()["id"]
+    outcome = wait_for_result(client, id)
+    assert outcome["status"] == "error" and "budget" in outcome["message"]
+    assert outcome["result"] is None
+    next_id = client.post("/api/runs", json=request()).json()["id"]
     assert wait_for_result(client, next_id)["status"] == "result"
 
 
-def test_bootstrap_defaults_and_local_assets(client):
+def test_bootstrap_snapping_defaults_assets_and_solver_contract(client):
     bootstrap = client.get("/api/bootstrap").json()
+    assert bootstrap["defaults"]["budget_min"] == 240
     assert bootstrap["defaults"]["start"] != bootstrap["defaults"]["end"]
-    assert bootstrap["defaults"]["start"] in {p["id"] for p in bootstrap["points"]}
-    assert client.get("/").status_code == 200
-    assert client.get("/assets/app.js").status_code == 200
+    assert bootstrap["status"]["graph"] == "ready"
+    far = next(p for p in bootstrap["points"] if p["id"] == "Far")
+    assert not far["routing_available"] and far["snap_distance_m"] > 300
     assert client.get("/assets/vendor/maplibre-gl.js").status_code == 200
-    assert client.get("/assets/vendor/maplibre-LICENSE.txt").status_code == 200
-    assert client.get("/api/runs/missing/events").status_code == 404
+    schema = client.get("/openapi.json").json()["components"]["schemas"]
+    assert set(schema["RunRequest"]["properties"]["algorithm"]["enum"]) == {
+        "alns",
+        "vns",
+        "aco",
+        "dijkstra",
+        "ppo",
+        "ppo_waypoint",
+    }
+    assert "distance_km" in schema["RouteSnapshot"]["required"]
+    assert "instructions" in schema["RouteSnapshot"]["required"]
 
 
-def test_custom_matrix_with_only_h02_uses_distinct_defaults(matrix_path):
-    with matrix_path.open(encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        fields, rows = reader.fieldnames, list(reader)
-    rename = {"A": "H02", "B": "Z", "P": "ZP", "Q": "ZQ"}
-    for row in rows:
-        row["from_id"], row["to_id"] = rename[row["from_id"]], rename[row["to_id"]]
-    with matrix_path.open("w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(rows)
-    with TestClient(create_app(matrix_path, graph_loader=lambda _: None)) as client:
-        defaults = client.get("/api/bootstrap").json()["defaults"]
-        assert defaults["start"] == "H02" and defaults["end"] != "H02"
+def test_missing_graph_has_readable_status_and_rejects_search(road_data):
+    files, points = road_data
+    files[1].unlink()
+    with TestClient(make_app(road_data)) as client:
+        status = client.get("/api/status").json()
+        assert status["graph"] == "error" and "Missing road files" in status["message"]
+        assert client.post("/api/runs", json=request()).status_code == 503
 
 
 @pytest.mark.parametrize("algorithm", ["alns", "vns", "aco", "dijkstra"])
-def test_worker_retains_only_one_terminal_message(matrix_path, monkeypatch, algorithm):
-    import queue
-
-    import Web.app as web_app
-
-    target = {
-        "alns": "ALNS",
-        "vns": "VNS",
-        "aco": "AntColony",
-        "dijkstra": "shortest_route",
-    }[algorithm]
-    original = getattr(web_app, target)
-    checkpoints = []
-
-    def wrapped(*args, **kwargs):
-        assert not kwargs.get("trace", False)
-        progress = kwargs["progress"]
-
-        def observed(event):
-            checkpoints.append(event["event"])
-            progress(event)
-
-        kwargs["progress"] = observed
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(web_app, target, wrapped)
+def test_worker_sends_one_terminal_message_and_obeys_cancellation(road_data, algorithm):
+    files, points = road_data
     output = queue.Queue()
-    search_worker(
-        str(matrix_path), request(algorithm=algorithm), output, threading.Event()
-    )
-    assert checkpoints
-    assert output.qsize() == 1
-    assert output.get()["status"] == "result"
+    cancelled = threading.Event()
+    search_worker(files, points, request(algorithm=algorithm), output, cancelled)
+    assert output.qsize() == 1 and output.get()["status"] == "result"
+    cancelled.set()
+    search_worker(files, points, request(algorithm=algorithm), output, cancelled)
+    assert output.empty()
 
 
 def test_final_only_browser_shell(client):
     html = client.get("/").text
     script = client.get("/assets/app.js").text
-    assert 'id="route-guide"' in html and 'id="guide-stops"' in html
-    for obsolete in [
-        'id="timeline"',
-        'id="inspector"',
-        'id="score-chart"',
-        'id="play"',
+    for id in [
+        "route-guide",
+        "guide-stops",
+        "road-directions-list",
+        "budget_min",
+        "departure",
     ]:
-        assert obsolete not in html
+        assert f'id="{id}"' in html
+    for obsolete in ["timeline", "inspector", "score-chart", "play", "budget_km"]:
+        assert f'id="{obsolete}"' not in html
     assert "EventSource" not in script and "requestAnimationFrame" not in script
+    assert "option.disabled = point.routing_available === false" in script
+    assert '<option value="aco">' in html
 
 
-def test_openapi_exposes_all_solvers_and_typed_response_contracts(client):
-    schema = client.get("/openapi.json").json()
-    request_schema = schema["components"]["schemas"]["RunRequest"]
-    assert set(request_schema["properties"]["algorithm"]["enum"]) == {
-        "alns",
-        "vns",
-        "aco",
-        "dijkstra",
-    }
-    assert "BootstrapPayload" in schema["components"]["schemas"]
-    assert "GeometryPayload" in schema["components"]["schemas"]
+def test_shell_refreshes_asset_urls_when_contents_change(
+    road_data, tmp_path, monkeypatch
+):
+    import Web.app as web_app
+
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "index.html").write_text(
+        '<link href="/assets/app.css"><script src="/assets/app.js"></script>',
+        encoding="utf-8",
+    )
+    (assets / "app.js").write_text("// old controls", encoding="utf-8")
+    (assets / "app.css").write_text("body {}", encoding="utf-8")
+    monkeypatch.setattr(web_app, "ASSETS", assets)
+    with TestClient(make_app(road_data)) as client:
+        first = client.get("/")
+        assert first.headers["cache-control"] == "no-store"
+        urls = re.findall(r'"(/assets/[^\"]+)"', first.text)
+        assert len(urls) == 2 and all("?v=" in url for url in urls)
+        assert all(client.get(url).status_code == 200 for url in urls)
+        (assets / "app.js").write_text("// new dropdowns", encoding="utf-8")
+        updated = re.findall(r'"(/assets/[^\"]+)"', client.get("/").text)
+        assert updated[0] == urls[0] and updated[1] != urls[1]
+        assert client.get(updated[1]).text == "// new dropdowns"

@@ -40,6 +40,7 @@
     result: null,
     guideOpen: false,
     guideStopIndex: 0,
+    roadStepIndex: null,
     markerSelection: null,
   };
   let map;
@@ -76,7 +77,7 @@
         ? point.name
         : "Choose a location from the list";
       $(name).setCustomValidity(
-        point ? "" : "Choose a point from the selected matrix",
+        point && point.routing_available !== false ? "" : "Choose an available road-graph endpoint",
       );
     }
     updateMarkers();
@@ -99,19 +100,83 @@
     );
   }
   $("collapse").onclick = () => collapse();
-  $("start").oninput = endpointNames;
-  $("end").oninput = endpointNames;
+  $("start").onchange = endpointNames;
+  $("end").onchange = endpointNames;
+
+  /** Populate endpoint dropdowns with hubs, POIs, then other locations.
+   * Sort point IDs numerically within each group.
+   * @returns {void}
+   */
+  function populateEndpointOptions() {
+    const collator = new Intl.Collator("vi", {
+      sensitivity: "base",
+      numeric: true,
+    });
+    const groups = [
+      { label: "Hubs", points: state.points.filter((p) => p.kind === "hub") },
+      { label: "POIs", points: state.points.filter((p) => p.kind === "poi") },
+      {
+        label: "Other locations",
+        points: state.points.filter((p) => !["hub", "poi"].includes(p.kind)),
+      },
+    ];
+    for (const group of groups)
+      group.points.sort((a, b) => collator.compare(a.id, b.id));
+    for (const field of ["start", "end"]) {
+      const options = groups
+        .filter((group) => group.points.length)
+        .map((group) => {
+          const section = document.createElement("optgroup");
+          section.label = group.label;
+          for (const point of group.points) {
+            const option = document.createElement("option");
+            option.value = point.id;
+            option.textContent = `${point.name} (${point.id})${point.routing_available === false ? " — outside snapping limit" : ""}`;
+            option.disabled = point.routing_available === false;
+            section.append(option);
+          }
+          return section;
+        });
+      $(field).replaceChildren(...options);
+      $(field).disabled = false;
+    }
+  }
+
+  /** @param {string} algorithm */
+  function isMetaheuristic(algorithm) {
+    return ["alns", "vns", "aco"].includes(algorithm);
+  }
+
+  const checkpointPaths = {
+    ppo: "checkpoints/ppo_road.zip",
+    ppo_waypoint: "checkpoints/ppo_waypoint.zip",
+  };
+  let checkpointAlgorithm = "ppo";
 
   /** Update controls to reflect the selected solver's actual objective.
    * @returns {void}
    */
   function algorithmInputs() {
-    const shortest = $("algorithm").value === "dijkstra";
-    $("iterations").disabled = shortest;
-    $("seed").disabled = shortest;
-    $("algorithm-objective").textContent = shortest
-      ? "Minimise travel time. Iterations and random seed do not apply."
-      : "Maximise unique POI score within the time budget; shorter time breaks ties.";
+    const algorithm = $("algorithm").value;
+    const heuristic = isMetaheuristic(algorithm);
+    const policy = Object.hasOwn(checkpointPaths, algorithm);
+    if (policy && algorithm !== checkpointAlgorithm) {
+      checkpointPaths[checkpointAlgorithm] = $("checkpoint").value;
+      $("checkpoint").value = checkpointPaths[algorithm];
+      checkpointAlgorithm = algorithm;
+    }
+    $("iterations").disabled = !heuristic;
+    $("seed").disabled = !heuristic;
+    $("checkpoint-field").hidden = !policy;
+    $("checkpoint").disabled = !policy;
+    $("checkpoint").required = policy;
+    const objectives = {
+      ppo: "Follow a saved policy that chooses individual road segments.",
+      ppo_waypoint: "Choose POIs with a trained policy and reserve a drive to the destination.",
+      dijkstra: "Compare road connections by estimated travel time across traffic slots.",
+    };
+    $("algorithm-objective").textContent = objectives[algorithm]
+      ?? "Maximise unique POI score within the time budget. Narrow-road-weighted distance breaks score ties.";
   }
   $("algorithm").onchange = algorithmInputs;
 
@@ -171,10 +236,11 @@
         name: p.name,
         label: `${p.id}  ${p.name}`,
         kind: p.kind,
+        collected: !!(state.guideOpen && state.result?.collected.includes(p.id)),
         endpoint: p.id === start ? "start" : p.id === end ? "end" : "none",
       },
     }));
-    const selection = JSON.stringify([start, end, state.points.length]);
+    const selection = JSON.stringify([start, end, state.points.length, state.guideOpen ? state.result?.collected : []]);
     if (state.markerSelection !== selection) {
       map.getSource("points").setData({ type: "FeatureCollection", features });
       state.markerSelection = selection;
@@ -216,6 +282,12 @@
         paint: { "line-color": color, "line-width": width },
       });
     }
+    map.addSource("road-focus", { type: "geojson", data: EMPTY() });
+    map.addLayer({
+      id: "road-focus", type: "line", source: "road-focus",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#e59b19", "line-width": 7 },
+    });
     map.addSource("points", { type: "geojson", data: EMPTY() });
     map.addLayer({
       id: "points",
@@ -230,7 +302,7 @@
           "#176b5b",
           "end",
           "#3d5fd9",
-          ["match", ["get", "kind"], "hub", "#16324f", "#6c7e8e"],
+          ["case", ["get", "collected"], "#e59b19", ["match", ["get", "kind"], "hub", "#16324f", "#6c7e8e"]],
         ],
         "circle-stroke-color": "white",
         "circle-stroke-width": 2,
@@ -324,6 +396,11 @@
     const info = document.createElement("p");
     info.textContent = `${point.id} • ${point.kind === "hub" ? "Hub" : "Point of interest"} • Score ${point.score.toFixed(2)}`;
     content.append(heading, info);
+    if (point.routing_available === false) {
+      const note = document.createElement("p");
+      note.textContent = `Unavailable as an endpoint or waypoint: nearest road node is ${Math.round(point.snap_distance_m)} m away (300 m limit).`;
+      content.append(note);
+    }
     const popup = new maplibregl.Popup({ offset: 12 })
       .setLngLat(coordinates)
       .setDOMContent(content)
@@ -334,6 +411,7 @@
     ]) {
       const button = document.createElement("button");
       button.textContent = label;
+      button.disabled = point.routing_available === false;
       button.onclick = () => {
         $(name).value = point.id;
         endpointNames();
@@ -374,6 +452,15 @@
         const feature = event.features[0];
         const point = state.byId.get(feature.properties.id);
         if (point) showPoint(point, feature.geometry.coordinates);
+      });
+      map.on("click", "route-line", (event) => {
+        const feature = event.features[0];
+        const index = Number(feature.properties.step_index);
+        if (!Number.isInteger(index) || !state.result?.instructions[index]) return;
+        selectRoadStep(index, false);
+        const label = document.createElement("div");
+        label.textContent = state.result.instructions[index].road;
+        new maplibregl.Popup({ offset: 10 }).setLngLat(event.lngLat).setDOMContent(label).addTo(map);
       });
       map.on("click", "route-stops", (event) =>
         selectGuideStop(Number(event.features[0].properties.index)),
@@ -440,7 +527,8 @@
       : state.points;
     if (!points.length) return;
     const bounds = new maplibregl.LngLatBounds();
-    points.forEach((p) => bounds.extend([p.lon, p.lat]));
+    if (route?.geometry) route.geometry.coordinates.forEach((coordinate) => bounds.extend(coordinate));
+    else points.forEach((p) => bounds.extend([p.lon, p.lat]));
     map.fitBounds(bounds, {
       padding: routePadding(),
       maxZoom: 15,
@@ -460,7 +548,7 @@
     if (!state.result) fitRoute();
   }
 
-  /** Build the completed itinerary and its matrix-derived route summary.
+  /** Build the completed waypoint itinerary and road-derived route summary.
    * @param {RouteSnapshot} result - Successfully completed final route.
    * @returns {void}
    */
@@ -470,7 +558,7 @@
     $("guide-endpoints").textContent =
       `${first?.name || result.route[0]} to ${last?.name || result.route.at(-1)}`;
     $("guide-duration").textContent = `${result.duration_min.toFixed(1)} min`;
-    $("guide-count").textContent = String(result.route.length);
+    $("guide-count").textContent = String(result.collected.length);
     $("guide-score").textContent = result.score.toFixed(2);
     $("guide-stops").replaceChildren();
     result.route.forEach((id, index) => {
@@ -509,9 +597,53 @@
     selectGuideStop(0, false);
     const params = state.params;
     $("guide-context").textContent =
-      `${params.algorithm.toUpperCase()} · Departs ${params.departure} · ${params.budget_min} min budget`;
+      `${params.algorithm.toUpperCase()} · ${params.departure} · ${params.budget_min} min budget · ${result.distance_km.toFixed(2)} km`;
     $("guide-collected").textContent =
-      `${result.collected.length} unique POIs credited, including those passed along the way.`;
+      `${result.collected.length} POIs within 100 m of the approximate road path: ${result.collected.map(id => state.byId.get(id)?.name || id).join(", ") || "none"}.`;
+    const directions = $("road-directions-list");
+    directions.replaceChildren();
+    result.instructions.forEach((step, index) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      const label = document.createElement("span");
+      label.textContent = `${step.action} ${step.road}`;
+      const distance = document.createElement("small");
+      distance.textContent = step.distance_m >= 1000
+        ? `${(step.distance_m / 1000).toFixed(2)} km`
+        : `${Math.round(step.distance_m)} m`;
+      button.append(label, distance);
+      button.onclick = () => selectRoadStep(index);
+      item.append(button);
+      directions.append(item);
+    });
+    $("road-selected").textContent = result.instructions.length
+      ? "Select a road to highlight it on the map."
+      : "Both endpoints share a road node; no road sections to list.";
+  }
+
+  /** Highlight the selected named section using the same edges as the solver. */
+  function selectRoadStep(index, moveMap = true) {
+    const step = state.result?.instructions[index];
+    if (!step) return;
+    state.roadStepIndex = index;
+    const buttons = $("road-directions-list").querySelectorAll("button");
+    buttons.forEach((button, i) => {
+      if (i === index) button.setAttribute("aria-current", "step");
+      else button.removeAttribute("aria-current");
+    });
+    $("road-selected").textContent = `${step.road} · ${(step.distance_m / 1000).toFixed(2)} km`;
+    if (!moveMap) buttons[index]?.scrollIntoView({ block: "nearest" });
+    if (!state.mapReady) return;
+    map.getSource("road-focus").setData({type: "FeatureCollection", features: [{
+      type: "Feature", geometry: {type: "LineString", coordinates: step.coordinates}, properties: {},
+    }]});
+    if (moveMap) {
+      const bounds = new maplibregl.LngLatBounds();
+      step.coordinates.forEach(coordinate => bounds.extend(coordinate));
+      map.fitBounds(bounds, {padding: routePadding(), maxZoom: 16,
+        duration: window.matchMedia("(prefers-reduced-motion:reduce)").matches ? 0 : 500});
+    }
   }
 
   /** Update the selected itinerary marker without changing road geometry.
@@ -609,9 +741,10 @@
       const status = await api("/api/status");
       state.graphReady = status.graph === "ready";
       if (state.graphReady && state.result) renderFinalRoute();
+      updateControls();
       $("graph-status").textContent =
         status.graph === "ready"
-          ? "Road geometry ready"
+          ? "Road dataset available"
           : status.graph === "error"
             ? "Road geometry unavailable"
             : "Preparing road geometry…";
@@ -638,7 +771,7 @@
    * @returns {void}
    */
   function updateControls() {
-    $("run").disabled = !state.ready || state.active;
+    $("run").disabled = !state.ready || !state.graphReady || state.active;
     $("stop").disabled = !state.active || !state.runId;
     $("run").textContent = state.active ? "Finding route…" : "Find route";
     $("run-form").setAttribute("aria-busy", String(state.active));
@@ -692,16 +825,20 @@
     endpointNames();
     if (!$("run-form").reportValidity()) return;
     const algorithm = /** @type {AlgorithmName} */ ($("algorithm").value);
+    const heuristic = isMetaheuristic(algorithm);
     /** @type {SearchParameters} */
     const params = {
       algorithm,
       start: $("start").value.trim(),
       end: $("end").value.trim(),
-      departure: $("departure").value,
       budget_min: Number($("budget_min").value),
-      iterations: algorithm === "dijkstra" ? 0 : Number($("iterations").value),
-      seed: algorithm === "dijkstra" ? 0 : Number($("seed").value),
+      departure: $("departure").value,
+      iterations: heuristic ? Number($("iterations").value) : 0,
+      seed: heuristic ? Number($("seed").value) : 0,
     };
+    if (Object.hasOwn(checkpointPaths, algorithm)) {
+      params.checkpoint = $("checkpoint").value.trim();
+    }
     if (params.start === params.end) {
       formError("Choose different start and destination points.");
       return;
@@ -718,6 +855,7 @@
       state.runId = response.id;
       state.result = null;
       state.guideStopIndex = 0;
+      state.roadStepIndex = null;
       setGuideVisible(false);
       $("guide-stops").replaceChildren();
       $("guide-map-note").hidden = true;
@@ -726,6 +864,7 @@
       $("download").removeAttribute("href");
       if (state.mapReady) {
         map.getSource("route").setData(EMPTY());
+        map.getSource("road-focus").setData(EMPTY());
         map.getSource("route-stops").setData(EMPTY());
       }
       updateControls();
@@ -789,6 +928,17 @@
       return;
     }
     const result = state.result;
+    if (result.geometry) {
+      map.getSource("route").setData({type: "FeatureCollection", features: result.instructions.length
+        ? result.instructions.map((step, index) => ({type: "Feature", geometry: {type: "LineString", coordinates: step.coordinates}, properties: {road: step.road, step_index: index}}))
+        : [{type: "Feature", geometry: result.geometry, properties: {}}]});
+      if (state.roadStepIndex !== null) selectRoadStep(state.roadStepIndex, false);
+      map.getSource("route-stops").setData({type: "FeatureCollection", features: result.route.map((id, index) => ({type: "Feature", geometry: {type: "Point", coordinates: [state.byId.get(id).lon, state.byId.get(id).lat]}, properties: {number: String(index + 1), index}}))});
+      $("guide-map-note").hidden = false;
+      $("guide-map-note").textContent = `Known narrow roads: ${(result.narrow_m / 1000).toFixed(2)} km · Unknown road width: ${(result.unknown_width_m / 1000).toFixed(2)} km.`;
+      updateMarkers();
+      return;
+    }
     const generation = state.generation;
     const token = ++state.renderToken;
     const pairs = new Map();
@@ -863,15 +1013,7 @@
       state.points = data.points;
       state.byId = new Map(data.points.map((p) => [p.id, p]));
       state.ring = data.ring;
-      for (const field of ["start", "end"]) {
-        const options = data.points.map((p) => {
-          const option = document.createElement("option");
-          option.value = p.id;
-          option.label = `${p.id} — ${p.name}`;
-          return option;
-        });
-        $(field + "-options").replaceChildren(...options);
-      }
+      populateEndpointOptions();
       for (const [key, value] of Object.entries(data.defaults))
         $(key).value = value;
       algorithmInputs();

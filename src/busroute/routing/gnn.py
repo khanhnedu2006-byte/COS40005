@@ -48,8 +48,12 @@ class PolicyValueHead(nn.Module):
         )
 
     def forward(
-        self, cur_emb: torch.Tensor, cand_embs: torch.Tensor,
-        cand_feats: torch.Tensor, global_feats: torch.Tensor, mask: torch.Tensor,
+        self,
+        cur_emb: torch.Tensor,
+        cand_embs: torch.Tensor,
+        cand_feats: torch.Tensor,
+        global_feats: torch.Tensor,
+        mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Return masked logits [K] and value [1] for K candidate edges.
 

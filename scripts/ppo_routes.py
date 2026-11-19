@@ -72,7 +72,14 @@ def main(argv=None):
             epochs=args.epochs,
             minibatch_size=args.minibatch_size,
         )
-        result = train(matrix, args.matrix, cfg, args.checkpoint, args.eval_cases, callback=PPOProgress())
+        result = train(
+            matrix,
+            args.matrix,
+            cfg,
+            args.checkpoint,
+            args.eval_cases,
+            callback=PPOProgress(),
+        )
     else:
         model = load_policy(args.checkpoint, args.matrix)
         features = Features(matrix, load_coordinates(args.matrix))
