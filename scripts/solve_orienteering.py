@@ -17,11 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matrix", default="data/final/od_matrix.csv")
     parser.add_argument(
-        "--algorithm", choices=("alns", "vns", "aco", "dijkstra", "ppo"), default="alns"
-    )
-    parser.add_argument(
-        "--checkpoint",
-        help="Optional trained PPO policy; without it PPO learns for this route",
+        "--algorithm", choices=("alns", "vns", "aco", "dijkstra"), default="alns"
     )
     parser.add_argument("--start", required=True, help="Start point ID, e.g. H01")
     parser.add_argument("--end", required=True, help="Destination point ID, e.g. H02")
@@ -31,9 +27,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--budget-min", type=float, required=True)
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument(
-        "--ppo-steps", type=int, default=2048, help="Simulated steps for online PPO"
-    )
     parser.add_argument(
         "--verbose",
         action="store_true",
@@ -60,36 +53,8 @@ def solve(args, *, progress=None, trace=False):
     if int(parts[0]) >= 24 or int(parts[1]) >= 60:
         raise ValueError("Departure must be a valid time in HH:MM")
     matrix = ODMatrix.from_csv(args.matrix)
-    if args.algorithm == "ppo":
-        # Keep PPO's ML dependencies optional for the metaheuristic solvers.
-        from busroute.routing.ppo_od import (
-            Features,
-            OnlinePPOSearch,
-            PPOConfig,
-            PPOSearch,
-            load_coordinates,
-            load_policy,
-        )
-
-        features = Features(matrix, load_coordinates(args.matrix))
-        if args.checkpoint:
-            algorithm: Algorithm = PPOSearch(
-                load_policy(args.checkpoint, args.matrix), features
-            )
-        else:
-            if args.verbose:
-                from ppo_progress import PPOProgress
-
-                callback = PPOProgress()
-            else:
-                callback = None
-            algorithm = OnlinePPOSearch(
-                features,
-                PPOConfig(total_steps=args.ppo_steps, seed=args.seed),
-                callback=callback,
-            )
-    elif args.algorithm == "alns":
-        algorithm = ALNS(
+    if args.algorithm == "alns":
+        algorithm: Algorithm = ALNS(
             iterations=args.iterations, seed=args.seed, progress=progress, trace=trace
         )
     elif args.algorithm == "vns":

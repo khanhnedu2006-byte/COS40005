@@ -3,8 +3,8 @@
 This is the training pipeline behind the browser's **PPO** option. It uses
 `stable_baselines3.PPO` from **Stable-Baselines3 2.9.2**, with Torch and
 `device="cpu"`. The road CLI does not import JAX/SBX or compile XLA kernels.
-The older OD-matrix pipeline in `ppo_od.py` still uses SBX, available through
-the optional `legacy-od-ppo` extra. Its checkpoints cannot be used here.
+Older SBX or `.pt` checkpoints are incompatible and rejected before
+deserialization.
 
 ## Start here
 
@@ -43,8 +43,7 @@ The library handles rollout storage, GAE, clipping, entropy regularization,
 advantage normalization, gradient clipping and Adam updates. We retain the
 routing environment and network definitions because ordinary PPO does not know
 what a valid road action, a POI reward or a time budget means. There is no
-second PPO implementation inside these modules. `ppo_train.py`, `gnn.py` and
-`env.py` are older teaching scaffolds outside the active pipeline.
+second PPO implementation inside these modules.
 
 ## What one decision looks like
 

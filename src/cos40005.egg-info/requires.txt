@@ -15,9 +15,6 @@ stable-baselines3>=2.9.2
 torch>=2.6
 typing-extensions>=4.12
 
-[legacy-od-ppo]
-sbx-rl<0.29,>=0.28.0
-
 [test]
 httpx>=0.28
 

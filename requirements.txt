@@ -8,10 +8,8 @@ networkx>=3.2
 shapely>=2.0
 folium>=0.16
 # Road PPO: Stable-Baselines3 (Torch/CPU).
-# Legacy OD PPO: install the optional project extra legacy-od-ppo.
 stable-baselines3>=2.9.2
 torch>=2.6
-torch-geometric>=2.5
 gymnasium>=0.29
 # Giai đoạn 2 (phân tích khuôn mặt) – cài khi cần
 # mediapipe>=0.10

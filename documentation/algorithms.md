@@ -111,6 +111,10 @@ time breaking ties. They preserve a best feasible solution while exploring.
 Their initial construction tries a direct route, then one-stop alternatives if
 necessary. This construction can fail even when a longer feasible route exists.
 
+For fair comparisons, use identical endpoints, departure, budget and matrix.
+Record completion, score, duration, computation time and seed. Road geometry
+initialization and rendering time are separate from solver runtime.
+
 ## Adaptive large neighbourhood search: ALNS
 
 ALNS constructs an initial feasible route and greedily inserts useful POIs.
@@ -175,22 +179,3 @@ lightweight unless detailed tracing is requested.
 There is a second use of Dijkstra in `Web/road_paths.py`: NetworkX finds a
 road-length-weighted path on OSM to draw a leg. That reconstruction does not
 replace this matrix-based travel-time baseline or change its reported duration.
-
-## Other existing approaches
-
-The greedy OD baseline selects feasible next POIs by newly collected score per
-travel time, using the environment's return-time estimate. It provides a simple
-comparison for learned policies and remains outside the browser selector.
-
-The existing PPO implementation uses SBX/JAX with a masked GraphSAGE policy.
-Its environment tracks the current point, remaining time, departure slot and
-collected POIs. Action masks exclude currently unavailable legs and estimate
-whether the destination can still be reached. That return-time estimate freezes
-a slot, so later slot changes can still cause a dead end. Policies can be trained
-or loaded from matrix-bound checkpoints through the CLI. See the existing
-[PPO instructions](../README.md#ppo-routing-on-the-od-matrix) for training and
-evaluation commands.
-
-For fair comparisons, use identical endpoints, departure, budget and matrix.
-Record completion, score, duration, computation time and seed. Road geometry
-initialization and rendering time are separate from solver runtime.

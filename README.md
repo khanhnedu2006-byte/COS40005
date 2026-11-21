@@ -18,14 +18,14 @@ pip install -e .
 python scripts/normalize_dataset.py --src <raw exports> --out dataset     # Step 0: unify raw exports
 python scripts/run_clean_gps.py --src dataset --out data/interim/gps   # Step 1
 python scripts/build_graph.py   --out data/processed                       # Steps 2–6
-python scripts/train_ppo.py                                               # OD-matrix PPO
-python scripts/ppo_road.py train                                          # Full-road-graph PPO
+python scripts/ppo_road.py train                                          # Full-road-graph Edge PPO
+python scripts/ppo_waypoint.py train                                      # Full-road-graph Waypoint PPO
 pytest                                                                     # Tests
 ```
 
-`build_graph.py` generates road graph files in its output directory. The legacy
-`train_ppo.py` uses `data/final/od_matrix.csv`. The new `ppo_road.py` trains on
-the complete base graph in `data/stage1/`; see its commands below.
+`build_graph.py` generates road graph files in its output directory. Both
+`ppo_road.py` and `ppo_waypoint.py` train on the complete base graph in
+`data/stage1/`; see their commands below.
 
 ## Conventions
 - Variable / function / file names in **English**.
@@ -43,7 +43,6 @@ python scripts/solve_orienteering.py --algorithm alns --start H01 --end H02 --de
 python scripts/solve_orienteering.py --algorithm vns --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
 python scripts/solve_orienteering.py --algorithm aco --start H01 --end H02 --departure 08:00 --budget-min 240 --iterations 100 --seed 42
 python scripts/solve_orienteering.py --algorithm dijkstra --start H01 --end H02 --departure 08:00 --budget-min 240
-python scripts/solve_orienteering.py --algorithm ppo --checkpoint checkpoints/ppo.zip --start H01 --end H02 --departure 08:00 --budget-min 240
 ```
 
 Use `--matrix data/final/od_matrix_mock.csv` for a mock-data smoke test. Output is
@@ -70,8 +69,8 @@ Tkinter and a graphical desktop are required (`python3-tk` on Ubuntu/Debian).
 The window starts the solver automatically; it has pan/zoom, Pause/Resume and
 animation speed controls. Close it to stop. The completed route is printed as
 JSON and the window stays open for inspection. ALNS and VNS animate selected
-removal, insertion and local-search actions, plus acceptance decisions. ACO,
-Dijkstra and PPO show their available progress and the final route.
+removal, insertion and local-search actions, plus acceptance decisions. ACO and
+Dijkstra show their available progress and the final route.
 
 Roads use the existing cache in `configs/settings.yaml`; a missing graph is
 downloaded through the existing OSM pipeline. Blue shows the best route, green
@@ -166,10 +165,8 @@ can be active at a time. Ctrl+C stops the server and worker. Basemap tiles need
 internet access; use Retry map if tiles fail. API tests require the test extra:
 `python -m pip install -e ".[web,test]"`.
 
-The legacy OD-matrix PPO learns by simulation for the requested route when no checkpoint is supplied;
-`--ppo-steps` controls its learning budget. `--iterations` and `--seed`
-configure ALNS, VNS and ant colony optimisation (ACO), while checkpoint-based PPO uses its trained
-policy for inference. The Dijkstra-style baseline seeks a short feasible route,
+`--iterations` and `--seed` configure ALNS, VNS and ant colony optimisation
+(ACO). The Dijkstra-style baseline seeks a short feasible route,
 without trying to maximise POI score; it uses time-dependent arrival-minute
 labels and does not model waiting, so it is not guaranteed to find the exact
 shortest route when availability or travel times change between slots.
@@ -241,56 +238,3 @@ real-world compliance. The matrix's representative travel times are estimates,
 not live traffic. Search starts with a direct route or a feasible route through
 one POI. If neither exists, it reports failure even if a longer route could
 exist. Both methods are heuristics and do not guarantee an optimal result.
-
-## PPO routing on the OD matrix
-
-Install the optional legacy dependencies with `pip install -e ".[legacy-od-ppo]"`.
-This OD-only PPO uses SBX's JAX
-implementation, Gymnasium, and a custom masked GraphSAGE actor. The OD
-pipeline reads `data/final/od_matrix.csv` by default. Pass `--matrix PATH` to
-`train_ppo.py`, or before the subcommand in `ppo_routes.py`, to use another matrix.
-To learn while solving a specific request, without a checkpoint:
-
-```bash
-python scripts/online_ppo.py --start H01 --end H02 --departure 08:00 --budget-min 240 --steps 2048
-```
-
-PPO repeatedly tries the requested scenario in the OD-matrix simulator, updates
-its policy after each rollout of 256 steps, and then returns the deterministic
-policy's route. The step budget is rounded up to complete rollouts; more steps
-take longer and do not guarantee a better route. This is simulated learning,
-not live traffic feedback. The CLI starts a fresh policy each time; in Python,
-reuse `OnlinePPOSearch(features, PPOConfig(...))` across calls to retain and
-continue updating the same in-memory policy. It is lost when the process exits.
-The dedicated script prints the final route as JSON on stdout and emits JSON-line
-progress on stderr at the end of each rollout: steps, completed policy updates,
-number of completed episodes, mean episode reward, and success rate. Rollout
-events occur before the next policy update; the final event includes that update.
-When no episode finishes in a rollout, reward and success rate are null. Capture
-the log with `2> ppo-training.jsonl` or view and save it with
-`2> >(tee ppo-training.jsonl >&2)` in Bash. Checkpoint training with
-`train_ppo.py` also emits progress on stderr.
-For a separately trained reusable checkpoint, for example:
-
-```bash
-python scripts/train_ppo.py --checkpoint checkpoints/ppo.zip --seed 0
-python scripts/ppo_routes.py infer --checkpoint checkpoints/ppo.zip --start H01 --end H02 --departure 08:00 --budget-min 240
-python scripts/ppo_routes.py evaluate --checkpoint checkpoints/ppo.zip --iterations 100 --output reports/ppo-evaluation.json
-```
-
-Training uses 60–240 minute budgets. Use `python scripts/train_ppo.py --help`
-for rollout, model and optimisation settings. Both training commands create
-`checkpoints/ppo.zip` by default; `--checkpoint` changes the output path.
-Evaluation uses the fixed held-out
-scenarios saved by the training configuration and reports failures for each
-method; successful score and travel-time averages exclude failed cases. The
-checkpoint is tied to the exact matrix file by SHA-256. SBX collects complete
-rollouts, so training may exceed the requested step count by up to one rollout
-minus one step. The older custom PyTorch `.pt` checkpoints are not compatible.
-`PPOSearch` in `busroute.routing.ppo_od` implements the same callable solver
-interface as `ALNS` and `VNS`, using a loaded policy and its matrix features.
-
-The simulator uses each leg's departure slot, with no waiting or POI dwell time.
-The mask's return-time estimate freezes the arrival slot, so a slot change can
-still leave the agent without a valid continuation. Matrix feasibility itself is
-an approximation and should not be interpreted as field-validated road legality.

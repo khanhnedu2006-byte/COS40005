@@ -24,7 +24,7 @@ Tiles and labels require internet access; the solvers use the local road graph.
 ## Reading guide
 
 - [Algorithms](algorithms.md): common evaluation rules; ALNS, VNS, Ant Colony,
-  Dijkstra, the greedy baseline and the existing PPO approach.
+  Dijkstra, Waypoint PPO and Edge PPO.
 - [Road PPO training](ppo-road.md): SB3 ownership, commented module walkthrough,
   graph observations, masking, rewards, checkpoints and performance limits.
 - [Visualization approaches](visualization.md): static Folium, native desktop
