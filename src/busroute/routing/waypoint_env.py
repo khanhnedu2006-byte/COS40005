@@ -232,12 +232,17 @@ class WaypointTrip:
 class WaypointEnv(gym.Env[np.ndarray, np.int64]):
     """Sample verified scenarios and expose the waypoint policy to SB3."""
 
+    metadata: dict[str, object] = {"render_modes": []}  # noqa: RUF012 -- Gymnasium declares an instance attribute.
+
     def __init__(
         self, features: WaypointFeatures, scenarios: tuple[Scenario, ...]
     ) -> None:
         super().__init__()
+        if not scenarios:
+            raise ValueError("WaypointEnv requires at least one scenario")
         self.features = features
         self.scenarios = scenarios
+        self.trip: WaypointTrip | None = None
         self.action_space = spaces.Discrete(len(features.action_ids))
         self.observation_space = spaces.Box(
             -np.inf,
@@ -253,5 +258,12 @@ class WaypointEnv(gym.Env[np.ndarray, np.int64]):
         return self.trip.observe(), {}
 
     def step(self, action):
-        reward = self.trip.step(int(action))
+        if self.trip is None or self.trip.done:
+            raise RuntimeError("Reset the environment before stepping")
+        index = int(action)
+        if not self.action_space.contains(index) or index not in self.trip.moves:
+            self.trip.done = True
+            self.trip.moves.clear()
+            return self.trip.observe(), -1.0, True, False, {"invalid_action": True}
+        reward = self.trip.step(index)
         return self.trip.observe(), reward, self.trip.done, False, {}

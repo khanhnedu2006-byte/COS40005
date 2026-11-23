@@ -192,6 +192,9 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        ppo_road.checkpoint_path(args.checkpoint)
+        if args.command == "benchmark":
+            ppo_road.checkpoint_path(args.edge_checkpoint)
         graph = RoadGraph.from_files(
             args.nodes, args.edges, args.widths, configured_points(ROOT)
         )

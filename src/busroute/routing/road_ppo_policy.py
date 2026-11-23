@@ -8,7 +8,7 @@ recomputed with gradients for every training minibatch.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -202,6 +202,7 @@ class RoadPolicy(ActorCriticPolicy):
         """
         if (
             not isinstance(observation_space, spaces.Box)
+            or len(observation_space.shape) != 1
             or not isinstance(action_space, spaces.Discrete)
             or action_space.n != k
         ):
@@ -210,6 +211,8 @@ class RoadPolicy(ActorCriticPolicy):
             )
         self.graph, self.k, self.hidden_dim = graph, k, hidden_dim
         self.global_dim = int(observation_space.shape[0]) - 2 - 8 * k
+        if self.global_dim <= 0:
+            raise ValueError("Observation space is too small for RoadPolicy")
         self._cached_embeddings: torch.Tensor | None = None
         kwargs["ortho_init"] = False
         super().__init__(observation_space, action_space, lr_schedule, **kwargs)
@@ -242,6 +245,38 @@ class RoadPolicy(ActorCriticPolicy):
     def clear_embedding_cache(self) -> None:
         """Discard static embeddings after externally changing policy weights."""
         self._cached_embeddings = None
+
+    def train(self, mode: bool = True) -> RoadPolicy:
+        """Invalidate cached embeddings when switching PyTorch module mode.
+
+        Args:
+            mode: True for training mode; False for evaluation mode.
+
+        Returns:
+            This policy instance.
+        """
+        if mode or mode != self.training:
+            self.clear_embedding_cache()
+        return super().train(mode)
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, Any],
+        strict: bool = True,
+        assign: bool = False,
+    ) -> Any:
+        """Load weights and discard any stale cached graph embeddings.
+
+        Args:
+            state_dict: Mapping of parameter and persistent buffer tensors.
+            strict: Whether keys must match the module state dict exactly.
+            assign: Whether to assign items rather than copying into tensors.
+
+        Returns:
+            NamedTuple of missing and unexpected keys from PyTorch.
+        """
+        self.clear_embedding_cache()
+        return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def set_training_mode(self, mode: bool) -> None:
         """Invalidate cached embeddings across SB3 optimizer/evaluation phases.

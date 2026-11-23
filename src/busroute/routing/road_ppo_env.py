@@ -127,6 +127,8 @@ class RoadPPOConfig:
             raise ValueError("Minibatch size must divide rollout steps")
         if type(self.curriculum_steps) is not int or self.curriculum_steps < 0:
             raise ValueError("Curriculum steps must be a non-negative integer")
+        if type(self.seed) is not int or self.seed < 0:
+            raise ValueError("Seed must be a non-negative integer")
         if (
             not 0 <= self.gamma <= 1
             or not 0 <= self.gae_lambda <= 1
@@ -256,6 +258,30 @@ class RoadFeatures:
         self.return_cache.move_to_end(target)
         return self.return_cache[target]
 
+    def valid_mask(self, env: RoadEnv) -> NDArray[np.bool_]:
+        """Compute valid outgoing action slots for the current trip state.
+
+        Excludes padded slots, self-loop edges (which cannot move closer to the
+        target or pass new POIs), and edges whose immediate travel time plus
+        optimistic return bound exceeds the remaining budget.
+
+        Args:
+            env: Active trip whose node, slot, target and budget are checked.
+
+        Returns:
+            Boolean mask of shape (K,).
+        """
+        graph = self.graph
+        ids = self.outgoing[env.current]
+        safe = np.maximum(ids, 0)
+        times = graph.times[env.slot][safe]
+        lower = self.returns(env.target)
+        return (
+            (ids >= 0)
+            & (graph.u[safe] != graph.v[safe])
+            & (times + lower[graph.v[safe]] <= env.remaining + 1e-7)
+        )
+
     def observation(self, env: RoadEnv) -> RoadObservation:
         """Build local candidates, edge attributes, trip state and action mask.
 
@@ -265,14 +291,20 @@ class RoadFeatures:
         Returns:
             Named arrays for one decision. K is maximum outgoing degree; edge
             features have shape (K, 6), globals (5 + P,), and mask (K,). False
-            mask entries represent padding or provably insufficient return time.
+            mask entries represent padding, self-loops or provably insufficient
+            return time.
         """
         graph = self.graph
         ids = self.outgoing[env.current]
+        valid_slot = ids >= 0
         safe = np.maximum(ids, 0)
         lower = self.returns(env.target)
         times = graph.times[env.slot][safe]
-        mask = (ids >= 0) & (times + lower[graph.v[safe]] <= env.remaining + 1e-7)
+        mask = (
+            valid_slot
+            & (graph.u[safe] != graph.v[safe])
+            & (times + lower[graph.v[safe]] <= env.remaining + 1e-7)
+        )
         visited = [bool(env.collected & (1 << bit)) for bit in range(len(graph.pois))]
         gain = [
             graph.mask_score(graph.masks[e] & ~env.collected) if e >= 0 else 0
@@ -288,6 +320,7 @@ class RoadFeatures:
                 np.array(gain) / 10,
             )
         ).astype(np.float32)
+        edge_features[~valid_slot] = 0.0
         angle = 2 * math.pi * ((env.start_minute * 60 + env.elapsed_s) % 86400) / 86400
         global_features = np.array(
             [
@@ -303,7 +336,7 @@ class RoadFeatures:
         return {
             "current": env.current,
             "target": env.target,
-            "candidates": graph.v[safe].copy(),
+            "candidates": np.where(valid_slot, graph.v[safe], 0),
             "edges": ids.copy(),
             "edge_features": edge_features,
             "globals": global_features,
@@ -378,15 +411,25 @@ class RoadEnv:
             ValueError: Endpoints, departure minute or budget are invalid.
         """
         n = len(features.graph.nodes)
-        if source == target or not 0 <= source < n or not 0 <= target < n:
+        if (
+            isinstance(source, bool)
+            or isinstance(target, bool)
+            or not isinstance(source, (int, np.integer))
+            or not isinstance(target, (int, np.integer))
+            or source == target
+            or not 0 <= source < n
+            or not 0 <= target < n
+        ):
             raise ValueError("Choose distinct valid road nodes")
         if (
-            not isinstance(start_minute, int)
+            isinstance(start_minute, bool)
+            or not isinstance(start_minute, int)
             or not 0 <= start_minute < 1440
             or not math.isfinite(budget_min)
             or budget_min <= 0
         ):
             raise ValueError("Invalid departure or time budget")
+        source, target = int(source), int(target)
         self.features, self.graph, self.config = features, features.graph, config
         self.source, self.target, self.start_minute = source, target, start_minute
         self.current, self.budget_s, self.elapsed_s = source, budget_min * 60, 0.0
@@ -437,14 +480,10 @@ class RoadEnv:
             InterruptedError: The graph's cancellation callback requests a stop.
         """
         self.graph.check_cancelled()
-        observation = self.observe()
-        if (
-            self.done
-            or not 0 <= action < len(observation["mask"])
-            or not observation["mask"][action]
-        ):
+        mask = self.features.valid_mask(self)
+        if self.done or not 0 <= action < len(mask) or not mask[action]:
             raise ValueError("Invalid or masked road action")
-        edge = int(observation["edges"][action])
+        edge = int(self.features.outgoing[self.current, action])
         duration = float(self.graph.times[self.slot][edge])
         new_pois = self.graph.masks[edge] & ~self.collected
         reward = (
@@ -465,7 +504,7 @@ class RoadEnv:
             or self.elapsed_s > self.budget_s + 1e-7
             or self.steps >= self.config.max_episode_steps
         )
-        if not self.done and not self.observe()["mask"].any():
+        if not self.done and not self.features.valid_mask(self).any():
             self.done = True
         if self.success:
             reward += self.config.arrival_bonus
@@ -529,7 +568,7 @@ def sample_env(
         if budget * 60 < lower * 1.05:
             continue
         env = RoadEnv(features, source, target, int(rng.integers(1440)), budget, config)
-        if env.observe()["mask"].any():
+        if features.valid_mask(env).any():
             return env
     raise ValueError("Could not sample a feasible training scenario")
 
@@ -629,7 +668,7 @@ class RoadTrainingEnv(gym.Env[FloatArray, np.int64]):
             )
         else:
             self.route_env = RoadEnv(self.features, *self.scenario, self.config)
-            if not self.route_env.observe()["mask"].any():
+            if not self.features.valid_mask(self.route_env).any():
                 raise ValueError("No valid initial action for this scenario")
         return self.features.pack(self.route_env), {}
 
@@ -657,7 +696,7 @@ class RoadTrainingEnv(gym.Env[FloatArray, np.int64]):
         index = int(action)
         if (
             not self.action_space.contains(index)
-            or not self.route_env.observe()["mask"][index]
+            or not self.features.valid_mask(self.route_env)[index]
         ):
             # Generic Gym environment checkers sample unmasked random actions.
             # A real masked policy cannot enter this branch.

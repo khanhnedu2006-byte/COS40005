@@ -430,6 +430,7 @@ def load_policy(
     features: RoadFeatures,
     *,
     env: RoadTrainingEnv | None = None,
+    restore_rng: bool | None = None,
 ) -> tuple[PPO, RoadPPOConfig]:
     """Load an SB3 road policy and optimizer state after graph validation.
 
@@ -438,10 +439,14 @@ def load_policy(
         features: Current graph features used for compatibility checks.
         env: Optional adapter to attach for resumed learning; None is valid
             for inference and evaluation.
+        restore_rng: Whether to restore Torch, NumPy and Python RNG streams
+            from checkpoint metadata. Defaults to True when ``env`` is
+            supplied for resumed training, and False for read-only loading.
 
     Returns:
         Loaded SB3 PPO model and its validated RoadPPOConfig. Restores Torch, NumPy
-        and Python RNG state after SB3 initializes the loaded model.
+        and Python RNG state after SB3 initializes the loaded model when
+        requested.
 
     Raises:
         OSError: The checkpoint cannot be opened.
@@ -451,22 +456,32 @@ def load_policy(
     config = RoadPPOConfig(**metadata["config"])
     config.validate()
     torch.set_num_threads(config.threads)
+    should_restore = (env is not None) if restore_rng is None else restore_rng
+    if not should_restore:
+        py_state = random.getstate()
+        np_state = np.random.get_state()
+        torch_state = torch.get_rng_state()
     model = PPO.load(checkpoint_path(path), env=env, device="cpu")
-    # SB3 reconstructs/initializes the network on load. Restore RNG streams
-    # afterwards so continuation keeps policy sampling and minibatch shuffling.
-    torch.set_rng_state(torch.tensor(metadata["torch_rng"], dtype=torch.uint8))
-    name, values, position, has_gauss, cached_gaussian = metadata["numpy_rng"]
-    np.random.set_state(
-        (
-            name,
-            np.asarray(values, dtype=np.uint32),
-            position,
-            has_gauss,
-            cached_gaussian,
+    # SB3 calls set_random_seed inside _setup_model(). Restore checkpoint RNG
+    # streams when resuming, or preserve the caller's RNG for read-only loads.
+    if should_restore:
+        torch.set_rng_state(torch.tensor(metadata["torch_rng"], dtype=torch.uint8))
+        name, values, position, has_gauss, cached_gaussian = metadata["numpy_rng"]
+        np.random.set_state(
+            (
+                name,
+                np.asarray(values, dtype=np.uint32),
+                position,
+                has_gauss,
+                cached_gaussian,
+            )
         )
-    )
-    version, values, gaussian = metadata["python_rng"]
-    random.setstate((version, tuple(values), gaussian))
+        version, values, gaussian = metadata["python_rng"]
+        random.setstate((version, tuple(values), gaussian))
+    else:
+        random.setstate(py_state)
+        np.random.set_state(np_state)
+        torch.set_rng_state(torch_state)
     return model, config
 
 
@@ -570,9 +585,12 @@ def infer_nodes(
         InterruptedError: The graph's cancellation callback requests a stop.
     """
     env = RoadEnv(features, source, target, start_minute, budget_min, config)
-    while not env.done and env.observe()["mask"].any():
+    while not env.done:
+        obs = features.pack(env)
+        if not (obs[-features.k :] > 0.5).any():
+            break
         features.graph.check_cancelled()
-        action, _ = model.predict(features.pack(env), deterministic=not stochastic)
+        action, _ = model.predict(obs, deterministic=not stochastic)
         env.step(int(action))
     return env
 
@@ -612,6 +630,7 @@ def infer(
         start == end
         or not np.isfinite(budget_min)
         or budget_min <= 0
+        or isinstance(start_minute, bool)
         or not isinstance(start_minute, int)
         or not 0 <= start_minute < 1440
     ):

@@ -243,6 +243,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     report: EvaluationReport | RouteSnapshot
     try:
         checkpoint_path(args.checkpoint)
+        if args.command == "train" and args.resume:
+            checkpoint_path(args.resume)
         graph = RoadGraph.from_files(
             args.nodes, args.edges, args.widths, configured_points(ROOT)
         )

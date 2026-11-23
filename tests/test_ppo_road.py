@@ -435,3 +435,106 @@ def test_sbx_checkpoint_is_rejected_before_model_deserialization(
         )
     with pytest.raises(ValueError, match="SBX"):
         load_policy(path, features)
+
+
+def test_padded_slots_are_zeroed_and_self_loops_masked(
+    features: RoadFeatures,
+) -> None:
+    """Ensure padded edge slots leak nothing and self-loop edges stay masked."""
+    nodes = features.graph.nodes.copy()
+    edges = pd.concat(
+        [
+            features.graph.edges[["from_idx", "to_idx", "road_name", "length_m"]],
+            pd.DataFrame(
+                [(0, 0, "Loop", 60.0)],
+                columns=["from_idx", "to_idx", "road_name", "length_m"],
+            ),
+        ],
+        ignore_index=True,
+    )
+    loop_graph = RoadGraph(
+        nodes,
+        edges,
+        {},
+        list(features.graph.points.values()),
+        time_params=features.graph.time_params,
+    )
+    loop_features = RoadFeatures(loop_graph)
+    obs = RoadEnv(loop_features, 0, 2, 480, 10, RoadPPOConfig()).observe()
+    # Node 0 has AJ (0->1) and Loop (0->0), plus one padded slot (K=3).
+    assert obs["mask"].tolist() == [True, False, False]
+    assert obs["candidates"][2] == 0
+    assert np.all(obs["edge_features"][2] == 0.0)
+
+
+def test_torch_train_eval_and_load_state_dict_clear_embedding_cache(
+    features: RoadFeatures,
+) -> None:
+    """Invalidate cached embeddings on PyTorch mode switches and weight loads."""
+    config = RoadPPOConfig(hidden_dim=8, threads=1)
+    model = make_model(features, RoadTrainingEnv(features, config), config)
+    obs = torch.as_tensor(features.pack(RoadEnv(features, 1, 2, 480, 10, config))[None])
+    model.policy.eval()
+    with patch.object(
+        model.policy.encoder, "forward", wraps=model.policy.encoder.forward
+    ) as encoder:
+        with torch.no_grad():
+            model.policy.get_distribution(obs)
+            model.policy.get_distribution(obs)
+        assert encoder.call_count == 1
+        model.policy.train(True)
+        model.policy.eval()
+        with torch.no_grad():
+            model.policy.get_distribution(obs)
+        assert encoder.call_count == 2
+        state = model.policy.state_dict()
+        model.policy.load_state_dict(state)
+        with torch.no_grad():
+            model.policy.get_distribution(obs)
+        assert encoder.call_count == 3
+
+
+def test_readonly_load_policy_preserves_global_rng_and_validates_inputs(
+    features: RoadFeatures, tmp_path: Path
+) -> None:
+    """Keep global RNG intact on inference load and reject bool/invalid inputs."""
+    import random
+
+    config = RoadPPOConfig(
+        total_steps=2,
+        rollout_steps=2,
+        minibatch_size=2,
+        epochs=1,
+        hidden_dim=8,
+        seed=7,
+        threads=1,
+    )
+    path = tmp_path / "road_rng.zip"
+    train(features, config, path)
+
+    random.seed(999)
+    np.random.seed(999)
+    torch.manual_seed(999)
+    py_before = random.getstate()
+    np_before = np.random.get_state()
+    torch_before = torch.get_rng_state()
+
+    load_policy(path, features)
+    assert random.getstate() == py_before
+    assert np_before[0] == np.random.get_state()[0]
+    assert np.array_equal(np_before[1], np.random.get_state()[1])
+    assert torch.equal(torch.get_rng_state(), torch_before)
+
+    load_policy(path, features, env=RoadTrainingEnv(features, config))
+    assert not torch.equal(torch.get_rng_state(), torch_before)
+
+    with pytest.raises(ValueError, match="Seed"):
+        RoadPPOConfig(seed=-1).validate()
+    with pytest.raises(ValueError, match="Seed"):
+        RoadPPOConfig(seed=True).validate()
+    with pytest.raises(ValueError, match="departure"):
+        RoadEnv(features, 0, 2, True, 10, config)
+    with pytest.raises(ValueError, match="road nodes"):
+        RoadEnv(features, False, 2, 480, 10, config)
+    with pytest.raises(ValueError, match="departure"):
+        infer(features, make_model(features, RoadTrainingEnv(features, config), config), config, "A", "B", True, 10)

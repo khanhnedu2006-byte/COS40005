@@ -8,6 +8,7 @@ from zipfile import ZipFile
 import pandas as pd
 import pytest
 import torch
+from stable_baselines3.common.env_checker import check_env
 from test_road_search import graph_fixture, point
 
 from busroute.routing.ppo_waypoint import infer, load_policy, train
@@ -15,6 +16,7 @@ from busroute.routing.road_graph import NoRoadRouteError, RoadGraph
 from busroute.routing.waypoint_env import (
     BENCHMARK_CASES,
     TRAIN_BUDGETS,
+    WaypointEnv,
     WaypointFeatures,
     WaypointTrip,
 )
@@ -160,3 +162,57 @@ def test_waypoint_checkpoint_training_and_web_worker(tmp_path):
         archive.writestr("data", json.dumps({"road_metadata": {"version": 3}}))
     with pytest.raises(ValueError, match="Waypoint PPO"):
         load_policy(edge_checkpoint, features)
+
+
+def test_waypoint_env_passes_gym_check_and_validates_training_and_metadata(
+    tmp_path,
+) -> None:
+    """Verify Gym check_env compliance, progress flush, and input validation."""
+    features = WaypointFeatures(graph_fixture())
+    env = WaypointEnv(features, (("A", "B", 480, 0.95),))
+    check_env(env)
+    with pytest.raises(RuntimeError, match="Reset"):
+        WaypointEnv(features, (("A", "B", 480, 0.95),)).step(0)
+    obs, _ = env.reset(seed=0)
+    assert obs.shape == (features.obs_size,)
+    _, reward, terminated, truncated, info = env.step(1)
+    assert terminated and not truncated and reward == -1.0 and info["invalid_action"]
+    with pytest.raises(RuntimeError, match="Reset"):
+        env.step(features.finish)
+
+    fixture = graph_fixture()
+    points = [point("H01", 16, 108), point("H02", 16, 108.006), point("H03", 16, 108)]
+    graph = RoadGraph(
+        fixture.nodes, fixture.edges, {}, points, time_params=fixture.time_params
+    )
+    train_features = WaypointFeatures(graph)
+    records = []
+    ckpt = tmp_path / "wp_progress.zip"
+    train(
+        train_features,
+        ckpt,
+        steps=4,
+        rollout_steps=4,
+        batch_size=2,
+        epochs=1,
+        threads=1,
+        progress=records.append,
+    )
+    assert any(record.get("steps") == 4 for record in records)
+
+    bad_ckpt = tmp_path / "bad_threads.zip"
+    with ZipFile(ckpt) as src, ZipFile(bad_ckpt, "w") as dst:
+        for name in src.namelist():
+            content = src.read(name)
+            if name == "data":
+                payload = json.loads(content)
+                payload["waypoint_metadata"]["threads"] = True
+                content = json.dumps(payload).encode()
+            dst.writestr(name, content)
+    with pytest.raises(ValueError, match="threads"):
+        load_policy(bad_ckpt, train_features)
+
+    with pytest.raises(ValueError, match="Seed"):
+        train(train_features, tmp_path / "neg.zip", steps=4, rollout_steps=4, batch_size=2, seed=-1)
+    with pytest.raises(ValueError, match="Seed"):
+        train(train_features, tmp_path / "bool.zip", steps=4, rollout_steps=4, batch_size=2, seed=True)

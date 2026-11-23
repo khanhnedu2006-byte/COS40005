@@ -50,8 +50,18 @@ class WaypointPolicy(ActorCriticPolicy):
     """Score each candidate with shared weights and a common action mask."""
 
     def _build(self, lr_schedule):
-        self.count = int(cast(spaces.Discrete, self.action_space).n)
+        if (
+            not isinstance(self.observation_space, spaces.Box)
+            or len(self.observation_space.shape) != 1
+            or not isinstance(self.action_space, spaces.Discrete)
+        ):
+            raise ValueError(
+                "WaypointPolicy requires a flat Box observation and Discrete action space"
+            )
+        self.count = int(self.action_space.n)
         self.global_size = self.features_dim - self.count * (ACTION_FEATURES + 1)
+        if self.global_size <= 0:
+            raise ValueError("Observation space is too small for WaypointPolicy")
         self.action_net = nn.Sequential(
             nn.Linear(self.global_size + ACTION_FEATURES, 64),
             nn.Tanh(),
@@ -113,15 +123,22 @@ class TrainingProgress(BaseCallback):
     def __init__(self, progress):
         super().__init__()
         self.progress = progress
+        self.last_reported = 0
+
+    def _emit(self) -> None:
+        episodes = self.model.ep_info_buffer
+        reward = sum(ep["r"] for ep in episodes) / len(episodes) if episodes else 0.0
+        self.progress({"steps": self.num_timesteps, "mean_recent_reward": reward})
+        self.last_reported = self.num_timesteps
 
     def _on_step(self) -> bool:
-        if self.num_timesteps % 4096 == 0:
-            episodes = self.model.ep_info_buffer
-            reward = (
-                sum(ep["r"] for ep in episodes) / len(episodes) if episodes else 0.0
-            )
-            self.progress({"steps": self.num_timesteps, "mean_recent_reward": reward})
+        if self.num_timesteps - self.last_reported >= 4096:
+            self._emit()
         return True
+
+    def _on_training_end(self) -> None:
+        if self.num_timesteps > self.last_reported:
+            self._emit()
 
 
 def train(
@@ -137,10 +154,15 @@ def train(
     progress=None,
 ) -> PPO:
     """Train fresh weights on verified non-benchmark hub scenarios."""
-    if min(steps, threads, epochs) < 1 or min(rollout_steps, batch_size) < 2:
+    if any(
+        type(v) is not int or v < 1
+        for v in (steps, threads, epochs, rollout_steps, batch_size)
+    ) or min(rollout_steps, batch_size) < 2:
         raise ValueError(
-            "Waypoint training counts must be positive, with batches of at least two"
+            "Waypoint training counts must be positive integers, with batches of at least two"
         )
+    if type(seed) is not int or seed < 0:
+        raise ValueError("Seed must be a non-negative integer")
     if rollout_steps % batch_size:
         raise ValueError("Batch size must divide waypoint rollout steps")
     path = checkpoint_path(checkpoint)
@@ -202,7 +224,10 @@ def load_policy(checkpoint: str | Path, features: WaypointFeatures) -> PPO:
         raise ValueError(
             "Waypoint PPO checkpoint does not match the graph or action list"
         )
-    torch.set_num_threads(int(metadata["threads"]))
+    threads = metadata.get("threads")
+    if type(threads) is not int or threads < 1:
+        raise ValueError("Invalid threads metadata in Waypoint PPO checkpoint")
+    torch.set_num_threads(threads)
     return PPO.load(path, device="cpu")
 
 

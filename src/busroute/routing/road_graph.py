@@ -396,7 +396,11 @@ class RoadProblem:
                 raise ValueError(f"{point} is more than 300 m from the road graph")
         if not math.isfinite(budget_min) or budget_min <= 0:
             raise ValueError("Time budget must be positive and finite")
-        if not isinstance(start_minute, int) or not 0 <= start_minute < 1440:
+        if (
+            isinstance(start_minute, bool)
+            or not isinstance(start_minute, int)
+            or not 0 <= start_minute < 1440
+        ):
             raise ValueError("Departure must be a minute within the day")
         self.graph, self.start, self.end = graph, start, end
         self.budget_s = budget_min * 60
