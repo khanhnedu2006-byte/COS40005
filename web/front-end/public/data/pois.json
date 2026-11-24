@@ -1,0 +1,402 @@
+[
+ {
+  "id": "P001",
+  "name": "Cầu Rồng",
+  "lat": 16.0613,
+  "lng": 108.2316,
+  "category": "bridge",
+  "score": 4.474
+ },
+ {
+  "id": "P002",
+  "name": "Tượng Cá Chép Hóa Rồng",
+  "lat": 16.06311,
+  "lng": 108.2298,
+  "category": "landmark",
+  "score": 4.449
+ },
+ {
+  "id": "P003",
+  "name": "Cầu Tình Yêu",
+  "lat": 16.0664,
+  "lng": 108.22875,
+  "category": "bridge",
+  "score": 4.454
+ },
+ {
+  "id": "P004",
+  "name": "Bảo Tàng Đà Nẵng",
+  "lat": 16.07469,
+  "lng": 108.22403,
+  "category": "landmark",
+  "score": 4.359
+ },
+ {
+  "id": "P005",
+  "name": "Bảo Tàng Hồ Chí Minh",
+  "lat": 16.04899,
+  "lng": 108.21752,
+  "category": "landmark",
+  "score": 4.413
+ },
+ {
+  "id": "P006",
+  "name": "Biển Mỹ Khê",
+  "lat": 16.05652,
+  "lng": 108.2471,
+  "category": "beach",
+  "score": 4.541
+ },
+ {
+  "id": "P007",
+  "name": "Ngũ Hành Sơn",
+  "lat": 16.00279,
+  "lng": 108.26442,
+  "category": "landmark",
+  "score": 4.405
+ },
+ {
+  "id": "P008",
+  "name": "Công Viên Kỳ Quan",
+  "lat": 16.09897,
+  "lng": 108.22519,
+  "category": "entertainment",
+  "score": 4.432
+ },
+ {
+  "id": "P009",
+  "name": "Giáo Xứ Chính Tòa Đà Nẵng",
+  "lat": 16.06674,
+  "lng": 108.22357,
+  "category": "landmark",
+  "score": 4.4
+ },
+ {
+  "id": "P010",
+  "name": "Tượng Đài Mẹ Nhu",
+  "lat": 16.06577,
+  "lng": 108.18359,
+  "category": "landmark",
+  "score": 4.475
+ },
+ {
+  "id": "P011",
+  "name": "Làng Gốm Thanh Hà",
+  "lat": 15.87874,
+  "lng": 108.30055,
+  "category": "landmark",
+  "score": 4.357
+ },
+ {
+  "id": "P012",
+  "name": "Biển An Bàng",
+  "lat": 15.91017,
+  "lng": 108.34063,
+  "category": "beach",
+  "score": 4.336
+ },
+ {
+  "id": "P013",
+  "name": "Tượng Đài 2 Tháng 9",
+  "lat": 16.04129,
+  "lng": 108.22426,
+  "category": "landmark",
+  "score": 4.442
+ },
+ {
+  "id": "P014",
+  "name": "Bảo tàng Mỹ thuật Đà Nẵng",
+  "lat": 16.07135,
+  "lng": 108.21787,
+  "category": "landmark",
+  "score": 4.45
+ },
+ {
+  "id": "P015",
+  "name": "Công Viên Biển Đông",
+  "lat": 16.07035,
+  "lng": 108.24588,
+  "category": "entertainment",
+  "score": 4.481
+ },
+ {
+  "id": "P016",
+  "name": "Chùa Pháp Lâm",
+  "lat": 16.06349,
+  "lng": 108.21636,
+  "category": "landmark",
+  "score": 4.451
+ },
+ {
+  "id": "P017",
+  "name": "Đường Hoa Tết Đà Nẵng",
+  "lat": 16.07608,
+  "lng": 108.2249,
+  "category": "entertainment",
+  "score": 4.439
+ },
+ {
+  "id": "P018",
+  "name": "Ga Đà Nẵng",
+  "lat": 16.07402,
+  "lng": 108.20919,
+  "category": "landmark",
+  "score": 4.377
+ },
+ {
+  "id": "P019",
+  "name": "Nhà Thờ Giáo Xứ Tam Tòa",
+  "lat": 16.07369,
+  "lng": 108.20722,
+  "category": "landmark",
+  "score": 4.44
+ },
+ {
+  "id": "P020",
+  "name": "Cầu Thuận Phước",
+  "lat": 16.10072,
+  "lng": 108.23157,
+  "category": "bridge",
+  "score": 4.454
+ },
+ {
+  "id": "P021",
+  "name": "Thành Cổ Điện Hải",
+  "lat": 16.07636,
+  "lng": 108.22166,
+  "category": "landmark",
+  "score": 4.437
+ },
+ {
+  "id": "P022",
+  "name": "Nhà Trưng bày Hoàng Sa",
+  "lat": 16.09365,
+  "lng": 108.25189,
+  "category": "landmark",
+  "score": 4.447
+ },
+ {
+  "id": "P023",
+  "name": "Nhà Thờ Giáo Xứ Nội Hà",
+  "lat": 16.07584,
+  "lng": 108.21256,
+  "category": "landmark",
+  "score": 4.439
+ },
+ {
+  "id": "P024",
+  "name": "Bảo Tàng Điêu Khắc Chăm Đà Nẵng",
+  "lat": 16.06039,
+  "lng": 108.22328,
+  "category": "landmark",
+  "score": 4.311
+ },
+ {
+  "id": "P025",
+  "name": "Làng Bích họa Đà Nẵng",
+  "lat": 16.06081,
+  "lng": 108.2201,
+  "category": "landmark",
+  "score": 4.379
+ },
+ {
+  "id": "P026",
+  "name": "Công Viên 29/3",
+  "lat": 16.04082,
+  "lng": 108.22235,
+  "category": "entertainment",
+  "score": 4.437
+ },
+ {
+  "id": "P027",
+  "name": "Làng lụa Hội An",
+  "lat": 15.88731,
+  "lng": 108.32008,
+  "category": "landmark",
+  "score": 4.395
+ },
+ {
+  "id": "P028",
+  "name": "Chùa Chúc Thánh",
+  "lat": 15.8888,
+  "lng": 108.32693,
+  "category": "landmark",
+  "score": 4.447
+ },
+ {
+  "id": "P029",
+  "name": "Chùa Phước Lâm",
+  "lat": 15.89248,
+  "lng": 108.32384,
+  "category": "landmark",
+  "score": 4.445
+ },
+ {
+  "id": "P030",
+  "name": "Công viên Đầm Sen",
+  "lat": 16.00097,
+  "lng": 108.25389,
+  "category": "entertainment",
+  "score": 4.44
+ },
+ {
+  "id": "P031",
+  "name": "Chùa Quán Thế Âm",
+  "lat": 15.99892,
+  "lng": 108.25509,
+  "category": "landmark",
+  "score": 4.499
+ },
+ {
+  "id": "P032",
+  "name": "Bảo Tàng Văn Hóa Phật Giáo",
+  "lat": 15.99887,
+  "lng": 108.25514,
+  "category": "landmark",
+  "score": 4.439
+ },
+ {
+  "id": "P033",
+  "name": "Cung Thể Thao Tiên Sơn",
+  "lat": 16.0369,
+  "lng": 108.22665,
+  "category": "entertainment",
+  "score": 4.445
+ },
+ {
+  "id": "P034",
+  "name": "Trung tâm Hội chợ Triển lãm Đà Nẵng",
+  "lat": 16.02373,
+  "lng": 108.2174,
+  "category": "entertainment",
+  "score": 4.418
+ },
+ {
+  "id": "P035",
+  "name": "Bải Cỏ Cháy An Bàng",
+  "lat": 15.9112,
+  "lng": 108.338,
+  "category": "beach",
+  "score": 4.438
+ },
+ {
+  "id": "P036",
+  "name": "Biển Cửa Đại",
+  "lat": 15.89995,
+  "lng": 108.358,
+  "category": "beach",
+  "score": 4.429
+ },
+ {
+  "id": "P037",
+  "name": "Bảo tàng Y khoa Apollo",
+  "lat": 15.96265,
+  "lng": 108.25861,
+  "category": "landmark",
+  "score": 4.444
+ },
+ {
+  "id": "P038",
+  "name": "Công Viên Châu Á Sun World",
+  "lat": 16.03852,
+  "lng": 108.22895,
+  "category": "entertainment",
+  "score": 4.414
+ },
+ {
+  "id": "P039",
+  "name": "Cung Thiếu Nhi Đà Nẵng",
+  "lat": 16.03844,
+  "lng": 108.22561,
+  "category": "entertainment",
+  "score": 4.432
+ },
+ {
+  "id": "P040",
+  "name": "Chùa Nam Sơn",
+  "lat": 16.00055,
+  "lng": 108.2052,
+  "category": "landmark",
+  "score": 4.493
+ },
+ {
+  "id": "P041",
+  "name": "Vincom Plaza Đà Nẵng",
+  "lat": 16.07147,
+  "lng": 108.23031,
+  "category": "entertainment",
+  "score": 4.279
+ },
+ {
+  "id": "P042",
+  "name": "Lotte Mart Đà Nẵng",
+  "lat": 16.03489,
+  "lng": 108.22932,
+  "category": "entertainment",
+  "score": 4.276
+ },
+ {
+  "id": "P043",
+  "name": "Chợ Hàn",
+  "lat": 16.0681,
+  "lng": 108.22412,
+  "category": "entertainment",
+  "score": 3.973
+ },
+ {
+  "id": "P044",
+  "name": "Chợ Cồn",
+  "lat": 16.06782,
+  "lng": 108.21453,
+  "category": "entertainment",
+  "score": 4.333
+ },
+ {
+  "id": "P045",
+  "name": "Aeon Mall Đà Nẵng",
+  "lat": 16.0662,
+  "lng": 108.20437,
+  "category": "entertainment",
+  "score": 4.389
+ },
+ {
+  "id": "P046",
+  "name": "GO! Đà Nẵng",
+  "lat": 16.06679,
+  "lng": 108.21352,
+  "category": "entertainment",
+  "score": 4.241
+ },
+ {
+  "id": "P047",
+  "name": "Bà Nà Hills",
+  "lat": 16.02661,
+  "lng": 108.03303,
+  "category": "entertainment",
+  "score": 4.402
+ },
+ {
+  "id": "P048",
+  "name": "Công Viên Suối Khoáng Nóng Núi Thần Tài",
+  "lat": 15.96805,
+  "lng": 108.02025,
+  "category": "entertainment",
+  "score": 4.383
+ },
+ {
+  "id": "P049",
+  "name": "Đỉnh Bàn Cờ",
+  "lat": 16.11963,
+  "lng": 108.27427,
+  "category": "entertainment",
+  "score": 4.462
+ },
+ {
+  "id": "P050",
+  "name": "Cảng cá Thọ Quang",
+  "lat": 16.09996,
+  "lng": 108.24108,
+  "category": "entertainment",
+  "score": 4.439
+ }
+]

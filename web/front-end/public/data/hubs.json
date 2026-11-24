@@ -1,0 +1,32 @@
+[
+ {
+  "id": "H01",
+  "name": "Sân bay quốc tế Đà Nẵng (nhà ga T2)",
+  "lat": 16.05634,
+  "lng": 108.20235
+ },
+ {
+  "id": "H02",
+  "name": "Cảng Tiên Sa – cổng cảng (khách tàu biển)",
+  "lat": 16.12196,
+  "lng": 108.21945
+ },
+ {
+  "id": "H03",
+  "name": "Bến xe Trung tâm Đà Nẵng",
+  "lat": 16.05501,
+  "lng": 108.17336
+ },
+ {
+  "id": "H04",
+  "name": "Khu khách sạn biển Mỹ Khê (Võ Nguyên Giáp × Phạm Văn Đồng)",
+  "lat": 16.0704,
+  "lng": 108.24507
+ },
+ {
+  "id": "H05",
+  "name": "Bến xe Hội An (cửa ngõ phố cổ)",
+  "lat": 15.88669,
+  "lng": 108.3211
+ }
+]
