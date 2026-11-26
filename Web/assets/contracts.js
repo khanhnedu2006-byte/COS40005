@@ -4,7 +4,7 @@
  * This module is imported by JSDoc only. It adds no runtime request or build
  * dependency; Python validates inputs and supplies these payloads over HTTP.
  *
- * @typedef {"dijkstra" | "alns" | "vns" | "aco" | "ppo" | "ppo_waypoint"} AlgorithmName
+ * @typedef {"dijkstra" | "alns" | "vns" | "aco" | "ppo"} AlgorithmName
  *
  * @typedef {Object} SearchParameters
  * @property {AlgorithmName} algorithm - Selected solver.
@@ -14,7 +14,7 @@
  * @property {string} departure - Local departure time HH:MM.
  * @property {number} iterations - Non-negative count for ALNS, VNS and ACO.
  * @property {number} seed - Random seed for ALNS, VNS and ACO.
- * @property {string | null} [checkpoint] - Checkpoint path for the chosen PPO solver.
+ * @property {string | null} [checkpoint] - Checkpoint path for the PPO solver.
  *
  * @typedef {Object} RouteSnapshot
  * @property {string[]} route - Ordered final-route IDs from start through destination.

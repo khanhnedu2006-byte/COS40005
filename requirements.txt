@@ -7,10 +7,6 @@ osmnx>=2.0
 networkx>=3.2
 shapely>=2.0
 folium>=0.16
-# Road PPO: Stable-Baselines3 (Torch/CPU).
-stable-baselines3>=2.9.2
-torch>=2.6
-gymnasium>=0.29
 # Giai đoạn 2 (phân tích khuôn mặt) – cài khi cần
 # mediapipe>=0.10
 # opencv-python>=4.9
@@ -18,4 +14,9 @@ gymnasium>=0.29
 pytest>=8
 pyyaml>=6
 
+# Reinforcement learning (PPO)
+stable-baselines3>=2.9
+sb3-contrib>=2.9       # MaskablePPO (action mask)
+gymnasium>=1.0
+torch
 scipy>=1.11          # ab_estimator: Dijkstra trên đồ thị OSM cho A/B bất kỳ

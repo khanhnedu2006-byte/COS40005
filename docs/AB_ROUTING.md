@@ -56,7 +56,7 @@ Bổ sung: chặng **xuất phát trước** giờ cấm có `through_ring = 1` 
 - 10 điểm: H01–H05 + T01–T05 (`configs/test_points.py`), thời gian TomTom thật
   (`od_matrix.csv` + `data/final/test_legs.csv`, lấy bằng `fetch_routes.py fetch --with-test-points`).
 - 90 cặp A→B có hướng × 5 giờ xuất phát (08:00, 11:00, 14:30, 17:00, 20:00) × 3 mức C (1,5 / 2 / 3 × đi thẳng)
-  = **1.350 trường hợp**, giống nhau cho mọi thuật toán (PPO, greedy, Dijkstra, ALNS, VNS).
+  = **1.350 trường hợp**, giống nhau cho mọi thuật toán (greedy, Dijkstra, ALNS, VNS).
 - Metrics: tỉ lệ hoàn thành, tổng điểm, số POI (chính + dọc đường), tổng thời gian, thời gian chạy,
   **optimality gap** so với điểm tốt nhất của ALNS/VNS trên cùng trường hợp.
 - So thêm: model train bằng `ab_rows` nhưng chấm bằng TomTom → cho biết sai số ước lượng có làm hỏng lộ trình không.

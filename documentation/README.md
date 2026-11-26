@@ -14,7 +14,7 @@ uv run --extra web python -m Web
 
 The server opens `http://127.0.0.1:8000`. Select endpoints, an algorithm, departure
 time and travel budget, then run the search. ALNS, VNS and ACO also accept
-iteration and random-seed inputs. PPO uses a saved road SB3 checkpoint.
+iteration and random-seed inputs.
 Only the final path is visualized, with an ordered, map-linked route guide.
 
 Use `--no-browser` or `--port 8001` after `-m Web` when needed. The checkout's
@@ -24,9 +24,7 @@ Tiles and labels require internet access; the solvers use the local road graph.
 ## Reading guide
 
 - [Algorithms](algorithms.md): common evaluation rules; ALNS, VNS, Ant Colony,
-  Dijkstra, Waypoint PPO and Edge PPO.
-- [Road PPO training](ppo-road.md): SB3 ownership, commented module walkthrough,
-  graph observations, masking, rewards, checkpoints and performance limits.
+  Dijkstra.
 - [Visualization approaches](visualization.md): static Folium, native desktop
   plotting, and the current interactive browser map, including their tradeoffs.
 - [Web application](web-application.md): folder structure, typed contracts,
@@ -34,7 +32,7 @@ Tiles and labels require internet access; the solvers use the local road graph.
 - [Development and verification](development.md): type checks, Google-style
   docstrings, regression tests, browser checks and known limitations.
 
-The web application supports `alns`, `vns`, `aco`, `ppo`, `ppo_waypoint` and `dijkstra`.
+The web application supports `alns`, `vns`, `aco` and `dijkstra`.
 The OD-matrix algorithms remain available through the separate command-line tools.
 The original solver CLI can still be used, for example:
 

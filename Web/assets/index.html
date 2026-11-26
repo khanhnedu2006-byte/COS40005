@@ -65,8 +65,7 @@
               <option value="alns">ALNS — adaptive neighbourhood search</option>
               <option value="vns">VNS — variable neighbourhood search</option>
               <option value="aco">ACO — ant colony optimisation</option>
-              <option value="ppo">PPO — road edges</option>
-              <option value="ppo_waypoint">Waypoint PPO</option>
+              <option value="ppo">PPO — reduced road edges</option>
             </select></label
           >
           <p id="algorithm-objective" class="algorithm-objective">
@@ -100,7 +99,7 @@
             /></label>
           </div>
           <label id="checkpoint-field" for="checkpoint" hidden>PPO checkpoint
-            <input id="checkpoint" name="checkpoint" type="text" value="checkpoints/ppo_road.zip" disabled />
+            <input id="checkpoint" name="checkpoint" type="text" value="checkpoints/ppo_reduced.zip" disabled />
           </label>
           <div id="form-error" class="error" role="alert" hidden></div>
           <div class="run-buttons">

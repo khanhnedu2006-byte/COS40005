@@ -11,7 +11,7 @@ from typing import Literal, TypeAlias
 from typing_extensions import NotRequired, TypeAliasType, TypedDict
 
 AlgorithmName: TypeAlias = Literal[
-    "alns", "vns", "aco", "dijkstra", "ppo", "ppo_waypoint"
+    "alns", "vns", "aco", "dijkstra", "ppo"
 ]
 RunStatus: TypeAlias = Literal["running", "result", "error", "stopped"]
 GraphStatus: TypeAlias = Literal["loading", "ready", "error"]

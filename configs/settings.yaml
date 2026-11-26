@@ -13,9 +13,3 @@ travel_time:
 routing:
   default_time_budget_min: 240
   start_time: "08:00"
-ppo:
-  total_steps: 200000
-  lr: 0.0003
-  gamma: 0.99
-  clip_eps: 0.2
-  hidden_dim: 64

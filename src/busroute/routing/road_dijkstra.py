@@ -129,7 +129,7 @@ def find_route(
         start: Configured starting point ID.
         end: Distinct configured destination point ID.
         cancelled: Cooperative cancellation predicate; True requests a stop.
-        algorithm: One of dijkstra, alns, vns, aco, ppo or ppo_waypoint.
+        algorithm: One of dijkstra, alns, vns, aco or ppo.
         budget_min: Positive finite travel-time budget in minutes.
         departure: Local departure time in HH:MM format.
         iterations: ALNS, VNS and ACO iteration budget.
@@ -154,28 +154,27 @@ def find_route(
         or int(departure[:2]) >= 24
     ):
         raise ValueError("Departure must be a valid HH:MM time")
-    if algorithm in ("ppo", "ppo_waypoint") and not checkpoint:
-        raise ValueError("Choose a trained checkpoint for the selected PPO solver")
-    graph = RoadGraph.from_files(nodes_path, edges_path, widths_path, points, cancelled)
-    if algorithm == "ppo_waypoint":
-        from busroute.routing import ppo_waypoint
-        from busroute.routing.waypoint_env import WaypointFeatures
-
-        waypoint_features = WaypointFeatures(graph)
-        model = ppo_waypoint.load_policy(
-            cast("str | Path", checkpoint), waypoint_features
-        )
-        return ppo_waypoint.infer(
-            waypoint_features, model, (start, end, to_minutes(departure), budget_min)
-        )
     if algorithm == "ppo":
-        from busroute.routing.ppo_road import RoadFeatures, infer, load_policy
+        if not checkpoint:
+            raise ValueError("Choose a trained checkpoint for the selected PPO solver")
+        from busroute.routing.ppo_train import infer_route
 
-        features = RoadFeatures(graph)
-        model, config = load_policy(cast("str | Path", checkpoint), features)
-        return infer(
-            features, model, config, start, end, to_minutes(departure), budget_min
+        return cast(
+            "RouteSnapshot",
+            infer_route(
+                nodes_path,
+                edges_path,
+                widths_path,
+                points,
+                start,
+                end,
+                checkpoint,
+                budget_min=budget_min,
+                start_minute=to_minutes(departure),
+                cancelled=cancelled,
+            ),
         )
+    graph = RoadGraph.from_files(nodes_path, edges_path, widths_path, points, cancelled)
     problem = RoadProblem(
         graph,
         start,

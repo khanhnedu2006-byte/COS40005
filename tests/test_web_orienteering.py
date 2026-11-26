@@ -119,55 +119,11 @@ def test_final_result_matches_core_solver_and_download(client, road_data, algori
     )
 
 
-def test_trained_road_ppo_checkpoint_in_web(
-    client: TestClient,
-    road_data: tuple[tuple[Path, Path, Path], list[dict[str, Any]]],
-    tmp_path: Path,
-) -> None:
-    """Verify an SB3 road ZIP loads through the web worker and shared renderer."""
-    pytest.importorskip("stable_baselines3")
-    from busroute.routing.road_graph import RoadGraph
-    from busroute.routing.ppo_road import RoadFeatures, RoadPPOConfig, train
-
-    files, points = road_data
-    features = RoadFeatures(RoadGraph.from_files(*files, points))
-    path = tmp_path / "road.zip"
-    train(
-        features,
-        RoadPPOConfig(
-            total_steps=4,
-            rollout_steps=4,
-            minibatch_size=2,
-            epochs=1,
-            hidden_dim=8,
-            max_episode_steps=12,
-        ),
-        path,
-    )
-    params = request(algorithm="ppo", checkpoint=str(path))
-    response = client.post("/api/runs", json=params)
-    assert response.status_code == 201
-    outcome = wait_for_result(client, response.json()["id"])
-    assert outcome["status"] == "result", outcome
-    assert outcome["result"] == find_route(
-        *files,
-        points,
-        "A",
-        "B",
-        algorithm="ppo",
-        checkpoint=path,
-        budget_min=6,
-        departure="08:00",
-    )
-    assert outcome["result"]["instructions"]
-
-
 @pytest.mark.parametrize(
     "changes",
     [
         {"algorithm": "unknown"},
         {"algorithm": "ppo"},
-        {"algorithm": "ppo_waypoint"},
         {"start": "unknown"},
         {"end": "A"},
         {"start": "Far"},
@@ -223,7 +179,6 @@ def test_bootstrap_snapping_defaults_assets_and_solver_contract(client):
         "aco",
         "dijkstra",
         "ppo",
-        "ppo_waypoint",
     }
     assert "distance_km" in schema["RouteSnapshot"]["required"]
     assert "instructions" in schema["RouteSnapshot"]["required"]
@@ -266,6 +221,62 @@ def test_final_only_browser_shell(client):
     assert "EventSource" not in script and "requestAnimationFrame" not in script
     assert "option.disabled = point.routing_available === false" in script
     assert '<option value="aco">' in html
+    assert '<option value="ppo">' in html
+    assert 'id="checkpoint"' in html
+    assert 'value="checkpoints/ppo_reduced.zip"' in html
+
+
+def test_trained_road_ppo_checkpoint_in_web(
+    client: TestClient,
+    road_data: tuple[tuple[Path, Path, Path], list[dict[str, Any]]],
+    tmp_path: Path,
+) -> None:
+    """Verify an SB3 reduced-graph PPO ZIP loads through the web worker and shared renderer."""
+    pytest.importorskip("sb3_contrib")
+    import json
+
+    from busroute.graph.ab_estimator import PARAMS_FILE
+    from busroute.routing.ppo_env import GraphData
+    from busroute.routing.ppo_train import train
+    from busroute.routing.road_dijkstra import road_widths
+
+    files, points = road_data
+    params = json.loads(Path(PARAMS_FILE).read_text(encoding="utf-8"))
+    graph = GraphData(
+        pd.read_parquet(files[0]),
+        pd.read_parquet(files[1]),
+        points,
+        params,
+        widths=road_widths(files[2]),
+    )
+    path = tmp_path / "ppo_reduced.zip"
+    train(
+        graph,
+        epochs=1,
+        episodes_per_epoch=2,
+        update_passes=1,
+        batch_size=4,
+        hidden=8,
+        max_episode_steps=12,
+        checkpoint=path,
+        log=lambda *_: None,
+    )
+    params_req = request(algorithm="ppo", checkpoint=str(path))
+    response = client.post("/api/runs", json=params_req)
+    assert response.status_code == 201
+    outcome = wait_for_result(client, response.json()["id"])
+    assert outcome["status"] == "result", outcome
+    assert outcome["result"] == find_route(
+        *files,
+        points,
+        "A",
+        "B",
+        algorithm="ppo",
+        checkpoint=path,
+        budget_min=6,
+        departure="08:00",
+    )
+    assert outcome["result"]["instructions"]
 
 
 def test_shell_refreshes_asset_urls_when_contents_change(

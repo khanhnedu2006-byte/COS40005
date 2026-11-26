@@ -63,9 +63,6 @@ and packaged static-resource availability. Some restricted sandboxes block the
 local IPC used by TestClient and spawned workers; use a normal local terminal
 for these integration tests.
 
-PPO has its own environment and training tests. Training tests can require more
-time and machine resources; they are separate from browser visualization checks.
-
 ## Browser verification
 
 Exercise all four algorithms with the same real-data endpoints, departure and

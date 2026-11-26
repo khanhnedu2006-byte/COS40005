@@ -1,4 +1,4 @@
-"""Baseline để so sánh với PPO: đường ngắn nhất và tham lam theo điểm POI / thời gian."""
+"""Baseline: đường ngắn nhất và tham lam theo điểm POI / thời gian."""
 
 from collections.abc import Hashable, Iterable
 

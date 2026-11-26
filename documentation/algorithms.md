@@ -2,7 +2,7 @@
 
 ## Time-budgeted road solvers in the web application
 
-Dijkstra, ALNS, VNS, ACO and both PPO solvers use the full directed base graph and configured POIs/hubs.
+Dijkstra, ALNS, VNS, ACO use the full directed base graph and configured POIs/hubs.
 Travel time follows commits `76f750b` (AB estimator) and `39bb0e5` (road-edge
 builder): edge seconds = length in metres × calibrated seconds/metre for its
 road-class group and time slot, using `configs/estimator_params.json`. Class
@@ -17,7 +17,7 @@ It replays each candidate using each edge's actual departure slot and keeps
 the earliest arrival. For tours with waypoints it also compares the route
 using the original departure-slot paths because a different waypoint arrival
 can change the traffic on later legs. The destination is a sink, so a connection to a POI
-cannot drive through it. PPO uses the same edge clock, including midnight
+cannot drive through it. The solvers use the same edge clock, including midnight
 wraparound. The search compares a finite set of slot-specific candidates, so
 its result is an estimate of the fastest time-dependent connection.
 
@@ -46,53 +46,6 @@ include `duration_min`, physical `distance_km`, waypoints, geometry, collected
 POIs, width coverage and estimated directions. Road curves and bus restrictions
 are absent from the base tables. The geometry and timing are estimates.
 
-## Waypoint PPO
-
-Waypoint PPO chooses an uncollected POI or finishes at the requested destination.
-It shares Dijkstra connections, the traffic-slot clock, and the route renderer
-with ALNS and VNS. A POI action is available when the road planner verifies
-both the drive to the POI and a continuation that fits the remaining budget.
-The policy earns the scores of newly passed POIs on each leg, including the
-final leg. Training samples feasible hub pairs across the configured departure
-slots and budgets and holds out the benchmark's ordered endpoint pairs.
-
-```bash
-python scripts/ppo_waypoint.py train --steps 100000 --seed 0
-python scripts/ppo_waypoint.py infer --start H01 --end H02 --departure 08:00 --budget-min 240
-python scripts/ppo_waypoint.py benchmark --report results/ppo_waypoint_benchmark.json
-```
-
-The browser and CLI use `checkpoints/ppo_waypoint.zip` by default. The
-checkpoint binds the policy to the graph and ordered waypoint actions.
-
-## Edge PPO on the full road graph
-
-`ppo_road.py` delegates rollout collection, GAE, clipping, advantage
-normalization and optimization to **stable_baselines3.PPO**. `road_ppo_env.py` defines the
-Gymnasium interface, road clock, unique POI rewards, narrow-road penalties,
-curriculum and compact observations. `road_ppo_policy.py` defines a masked
-Torch actor and critic sharing a trainable two-layer directed GraphSAGE encoder
-that processes every road node with sparse edge-list aggregation.
-
-Each action traverses one outgoing edge, including parallel edges. Padded
-slots and moves whose duration plus an optimistic return-time bound exceed
-the remaining budget are masked inside the actor, during both sampling and
-updates. The bound minimizes each edge's time over all slots; actual slot
-changes can still cause failure. Step caps, dead ends and arrival are terminal
-states, while ordinary rollout cuts bootstrap SB3's critic.
-
-Checkpoints use SB3 ZIP serialization, preserving policy/optimizer state,
-graph fingerprints, RNG state, counters and fixed held-out cases. Continuation
-starts a new trip. The full-graph embeddings are cached only while collecting rollouts or
-predicting without gradients. Training minibatches recompute them. Old SBX
-ZIPs and `.pt` weights require retraining. See the
-[pipeline walkthrough](ppo-road.md) for annotated data flow and commands.
-
-Road inference never substitutes a Dijkstra path if the policy fails.
-Successful policy edges share replay, score, geometry and instructions with
-the other road solvers. Compare completion, POI score, travel time and
-narrow-road exposure on identical trips; PPO's shaped reward and the
-heuristics' lexicographic objectives differ.
 
 ## Legacy OD-matrix problem and evaluation
 

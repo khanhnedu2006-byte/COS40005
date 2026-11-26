@@ -69,7 +69,7 @@ class RunRequest(BaseModel):
         hour, minute = map(int, self.departure.split(":"))
         if hour >= 24 or minute >= 60:
             raise ValueError("Departure must be a valid HH:MM time")
-        if self.algorithm in ("ppo", "ppo_waypoint") and not self.checkpoint:
+        if self.algorithm == "ppo" and not self.checkpoint:
             raise ValueError("Choose a trained checkpoint for the selected PPO solver")
         return self
 

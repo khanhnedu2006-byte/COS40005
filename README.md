@@ -18,14 +18,10 @@ pip install -e .
 python scripts/normalize_dataset.py --src <raw exports> --out dataset     # Step 0: unify raw exports
 python scripts/run_clean_gps.py --src dataset --out data/interim/gps   # Step 1
 python scripts/build_graph.py   --out data/processed                       # Steps 2–6
-python scripts/ppo_road.py train                                          # Full-road-graph Edge PPO
-python scripts/ppo_waypoint.py train                                      # Full-road-graph Waypoint PPO
 pytest                                                                     # Tests
 ```
 
-`build_graph.py` generates road graph files in its output directory. Both
-`ppo_road.py` and `ppo_waypoint.py` train on the complete base graph in
-`data/stage1/`; see their commands below.
+`build_graph.py` generates road graph files in its output directory.
 
 ## Conventions
 - Variable / function / file names in **English**.
@@ -124,13 +120,10 @@ MapLibre GL JS 5.24.0 is bundled locally; the OpenFreeMap
 basemap, labels and glyphs require internet access and a WebGL-capable browser.
 
 Choose endpoints from the Start and Destination dropdowns, or click a map marker.
-Select **Dijkstra**, **ALNS**, **VNS**, **ACO**, **PPO — road edges** or **Waypoint PPO**, set a **time budget in minutes**,
+Select **Dijkstra**, **ALNS**, **VNS**, **ACO**, set a **time budget in minutes**,
 and choose Find route. ALNS, VNS and ACO also accept iterations and a random seed.
 Defaults are 240 minutes, departure 08:00, 100 iterations and seed 0. Cancel stops the isolated solver
 process. Only the final result is displayed.
-The PPO solvers each require a trained ZIP checkpoint. Waypoint PPO chooses
-POIs, and the shared Dijkstra planner drives each leg while reserving enough
-time to reach the destination. See the [training and benchmark commands](documentation/algorithms.md#waypoint-ppo).
 
 The web solvers use `data/stage1/nodes_base.parquet`, `edges_base.parquet`,
 `data/final/duong_pho_clean.csv`, and configured POIs/hubs. Dijkstra, ALNS, VNS and ACO build directed
@@ -170,43 +163,6 @@ internet access; use Retry map if tiles fail. API tests require the test extra:
 without trying to maximise POI score; it uses time-dependent arrival-minute
 labels and does not model waiting, so it is not guaranteed to find the exact
 shortest route when availability or travel times change between slots.
-
-## PPO training on the full road graph
-
-The road pipeline now uses **Stable-Baselines3 PPO (Torch, CPU)** on all 93,751 base nodes and
-230,749 directed edges. SB3 manages rollouts, GAE and optimizer updates; our
-Gymnasium environment and masked Torch GraphSAGE policy retain edge-level
-routing, time budgets, unique POI rewards and penalties for known widths below
-5.5 m. No dense node-by-node adjacency is stored in observations.
-
-```bash
-python scripts/ppo_road.py train --steps 200000 --threads 4 --checkpoint checkpoints/ppo_road.zip --report results/ppo_road.json
-python scripts/ppo_road.py evaluate --checkpoint checkpoints/ppo_road.zip --report results/ppo_road_eval.json
-python scripts/ppo_road.py infer --checkpoint checkpoints/ppo_road.zip --start H01 --end H02 --departure 08:00 --budget-min 240
-python scripts/ppo_road.py train --resume checkpoints/ppo_road.zip --steps 200000 --checkpoint checkpoints/ppo_road.zip
-```
-
-See the [commented pipeline walkthrough](documentation/ppo-road.md) for the
-module layout, observations, rewards, curriculum, masking, checkpoint lifecycle
-and performance limits. The CLI inherits saved settings on resume. SB3 rounds
-the additional step budget up to whole rollouts. Twenty fixed evaluation trips
-are saved by default and their ordered endpoint pairs excluded from training.
-Failures have no completed-route score. Progress goes to stderr; final JSON
-and optional report files contain the results.
-
-Select **PPO** in the browser and enter the road ZIP path. Successful policy
-edges produce road instructions and highlighted passed POIs. Failed inference
-is reported without a shortest-path fallback. Previous SBX road ZIPs and old Torch `.pt` checkpoints need retraining;
-OD-matrix checkpoints are also incompatible with road checkpoints.
-
-A small correctness run uses `--steps 8 --rollout-steps 8 --batch-size 4
---epochs 1 --hidden-dim 8 --max-episode-steps 8 --eval-count 0`. CPU execution is
-explicit; `--threads` defaults to four. Embeddings are cached during rollouts
-and inference, then recomputed with gradients for each training minibatch.
-The [guide's CPU smoke comparison](documentation/ppo-road.md#cpu-performance-and-thread-controls)
-measured about 6 seconds for this implementation versus 16 seconds for the
-previous SBX implementation on a 32-interaction run. This is an implementation
-smoke measurement, not a convergence or long-run speed guarantee.
 
 ### Legacy OD-matrix solver notes
 

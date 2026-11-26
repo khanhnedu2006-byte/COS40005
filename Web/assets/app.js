@@ -148,10 +148,8 @@
   }
 
   const checkpointPaths = {
-    ppo: "checkpoints/ppo_road.zip",
-    ppo_waypoint: "checkpoints/ppo_waypoint.zip",
+    ppo: "checkpoints/ppo_reduced.zip",
   };
-  let checkpointAlgorithm = "ppo";
 
   /** Update controls to reflect the selected solver's actual objective.
    * @returns {void}
@@ -160,19 +158,13 @@
     const algorithm = $("algorithm").value;
     const heuristic = isMetaheuristic(algorithm);
     const policy = Object.hasOwn(checkpointPaths, algorithm);
-    if (policy && algorithm !== checkpointAlgorithm) {
-      checkpointPaths[checkpointAlgorithm] = $("checkpoint").value;
-      $("checkpoint").value = checkpointPaths[algorithm];
-      checkpointAlgorithm = algorithm;
-    }
     $("iterations").disabled = !heuristic;
     $("seed").disabled = !heuristic;
     $("checkpoint-field").hidden = !policy;
     $("checkpoint").disabled = !policy;
     $("checkpoint").required = policy;
     const objectives = {
-      ppo: "Follow a saved policy that chooses individual road segments.",
-      ppo_waypoint: "Choose POIs with a trained policy and reserve a drive to the destination.",
+      ppo: "Follow a saved PPO policy edge-by-edge on the reduced road graph (with road width awareness).",
       dijkstra: "Compare road connections by estimated travel time across traffic slots.",
     };
     $("algorithm-objective").textContent = objectives[algorithm]
