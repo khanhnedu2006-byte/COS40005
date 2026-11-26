@@ -55,7 +55,7 @@ Nhóm **bỏ cách tính thời gian trên từng đoạn đường OSM** (white
   - giờ cấm thì gửi kèm vùng tránh là vành đai.
 - Toàn bộ dữ liệu train nằm trong **một file `data/final/od_matrix.csv`**.
 
-Chi tiết các bước và trạng thái nằm trong `docs/DATA_TASKS.md` của repo.
+Chi tiết các bước và trạng thái nằm trong `documentation/DATA_TASKS.md` của repo.
 
 ---
 
@@ -152,7 +152,7 @@ build_gps_trips.py ─► fetch_routes.py validate ─► reports/gps_validation
 
 | File | Nội dung |
 |---|---|
-| `docs/DATA_TASKS.md` | Kế hoạch dữ liệu v2, trạng thái, việc chờ quyết định |
+| `documentation/DATA_TASKS.md` | Kế hoạch dữ liệu v2, trạng thái, việc chờ quyết định |
 | `scripts/fetch_routes.py` | Lấy thời gian từ TomTom (hoặc Goong). Các lệnh: `diag`, `test`, `compare`, `validate`, `fetch`, `build` |
 | `scripts/audit_pois.py` | Rà toạ độ POI và hub, ghi `reports/poi_audit.csv` |
 | `scripts/build_gps_trips.py` | Tách chặng GPS thật |

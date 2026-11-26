@@ -3,7 +3,7 @@
 Routing for **45-seat tour buses** across Da Nang city (including former Quảng Nam / Hội An), followed by driver facial analysis from cabin video.
 
 - Project context for teammates / AI assistants: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md)
-- Architecture & source layout: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- Architecture & source layout: [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md)
 
 ## Setup
 ```bash

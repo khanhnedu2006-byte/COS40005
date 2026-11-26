@@ -4,7 +4,7 @@
 
 ## 1. Sơ đồ tổng thể
 
-Bản chi tiết hơn (có ghi chú từng bước) nằm ở `docs/architecture.mmd`. GitHub và VS Code (extension Markdown Preview Mermaid) hiển thị được sơ đồ dưới đây.
+Bản chi tiết hơn (có ghi chú từng bước) nằm ở `documentation/architecture.mmd`. GitHub và VS Code (extension Markdown Preview Mermaid) hiển thị được sơ đồ dưới đây.
 
 ```mermaid
 flowchart TD
@@ -101,7 +101,7 @@ COS40005/source_code/
 ├── .gitignore                  # chặn data/, video, *.csv, *.zip
 ├── configs/
 │   └── settings.yaml           # tham số chạy (OSM place, ngân sách, PPO)
-├── docs/
+├── documentation/
 │   ├── ARCHITECTURE.md         # file này
 │   └── architecture.mmd        # sơ đồ chi tiết (Mermaid) – mở bằng draw.io: Arrange › Insert › Advanced › Mermaid
 ├── data/                       # KHÔNG commit (xem data/README.md)

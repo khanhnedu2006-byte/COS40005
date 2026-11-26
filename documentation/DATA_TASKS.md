@@ -89,4 +89,4 @@ Bài toán gốc: người dùng gõ địa chỉ A, B bất kỳ. `od_matrix.cs
 | Chặng đi ra từ Cầu Rồng: khai `vehicleHeading` = 90°, lấy lại 270 chặng (`fetch --refetch-from P001`) | ⏳ chờ chạy |
 | `src/busroute/graph/ab_estimator.py`: thời gian A/B bất kỳ trên đồ thị OSM, hiệu chỉnh theo TomTom (`scripts/calibrate_estimator.py`) | ✅ sai số 15–18 % trên hub, khớp feasible 97,5–99,9 % |
 | 5 điểm kiểm tra T01–T05 (`configs/test_points.py`) → `data/final/test_legs.csv` (`fetch --with-test-points`, ~2.850 lượt) | ⏳ chờ chạy |
-| Đặc tả train / kiểm tra / demo cho A/B bất kỳ: `docs/AB_ROUTING.md` | ✅ |
+| Đặc tả train / kiểm tra / demo cho A/B bất kỳ: `documentation/AB_ROUTING.md` | ✅ |
