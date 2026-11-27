@@ -145,47 +145,34 @@ def find_route(
         ValueError: Inputs/checkpoint are invalid or no feasible route is found.
         InterruptedError: The cancellation predicate requests a stop.
     """
-    from busroute.routing.road_graph import RoadGraph, RoadProblem
-    from busroute.routing.road_metaheuristics import search
-    from busroute.utils.timeslots import to_minutes
+    from busroute.routing.base import RoadDatasetSpec, RouteRequest
+    from busroute.routing.ppo_env import REDUCED_DIR
+    from busroute.routing.road_metaheuristics import POI_SOLVERS
 
-    if (
-        not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", departure)
-        or int(departure[:2]) >= 24
-    ):
-        raise ValueError("Departure must be a valid HH:MM time")
-    if algorithm == "ppo":
-        if not checkpoint:
-            raise ValueError("Choose a trained checkpoint for the selected PPO solver")
-        from busroute.routing.ppo_train import infer_route
-
-        return cast(
-            "RouteSnapshot",
-            infer_route(
-                nodes_path,
-                edges_path,
-                widths_path,
-                points,
-                start,
-                end,
-                checkpoint,
-                budget_min=budget_min,
-                start_minute=to_minutes(departure),
-                cancelled=cancelled,
-            ),
-        )
-    graph = RoadGraph.from_files(nodes_path, edges_path, widths_path, points, cancelled)
-    problem = RoadProblem(
-        graph,
+    request = RouteRequest.from_departure(
         start,
         end,
         budget_min,
-        start_minute=to_minutes(departure),
-        all_pois=algorithm != "dijkstra",
+        departure=departure,
+        iterations=iterations,
+        seed=seed,
+        cancelled=cancelled,
     )
-    result = (
-        problem.direct
-        if algorithm == "dijkstra"
-        else search(problem, algorithm, iterations=iterations, seed=seed)
+    data = RoadDatasetSpec.from_raw(
+        nodes_path,
+        edges_path,
+        widths_path,
+        points,
+        reduced_dir=REDUCED_DIR,
+        use_reduced=True,
     )
-    return cast("RouteSnapshot", graph.snapshot(problem, result))
+    if algorithm == "ppo":
+        if not checkpoint:
+            raise ValueError("Choose a trained checkpoint for the selected PPO solver")
+        from busroute.routing.ppo_train import StreetPPOSolver
+
+        return cast("RouteSnapshot", StreetPPOSolver(checkpoint).solve_snapshot(request, data=data))
+    solver_cls = POI_SOLVERS.get(algorithm)
+    if solver_cls is None:
+        raise ValueError(f"Unsupported algorithm: {algorithm}")
+    return cast("RouteSnapshot", solver_cls().solve_snapshot(request, data=data))

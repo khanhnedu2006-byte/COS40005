@@ -37,6 +37,7 @@ from busroute.utils.geo import normalize_road_name
 from busroute.utils.timeslots import slot_of
 
 ROOT = Path(__file__).resolve().parents[3]
+BASE_DIR = ROOT / "data" / "stage1"
 REDUCED_DIR = ROOT / "data" / "stage1_reduced"
 WIDTHS_FILE = ROOT / "data" / "final" / "duong_pho_clean.csv"
 
@@ -167,18 +168,29 @@ class GraphData:
         for i, node in enumerate(self.poi_node):
             self.pois_at.setdefault(int(node), []).append(i)
 
+        unique_nodes, inv = np.unique(self.poi_node, return_inverse=True)
+        self._unique_poi_nodes: np.ndarray = unique_nodes.astype(np.int64, copy=False)
+        unique_masks = [0] * len(self._unique_poi_nodes)
+        for poi_idx, u_idx in enumerate(inv):
+            unique_masks[int(u_idx)] |= 1 << poi_idx
+        self._unique_poi_masks: tuple[int, ...] = tuple(unique_masks)
+        self._poi_dist_table: dict[str, np.ndarray] = {}
+
     @classmethod
     def load(
         cls,
         directory: Path = REDUCED_DIR,
         widths_path: Path | None = WIDTHS_FILE,
+        *,
+        full_graph: bool = False,
     ) -> GraphData:
-        """Nạp đồ thị rút gọn, tham số tốc độ và bảng bề rộng đường từ đĩa.
+        """Nạp đồ thị đường (rút gọn hoặc đầy đủ 93k nút), tham số tốc độ và bề rộng đường.
 
         Args:
             directory: Thư mục chứa ``nodes_reduced.parquet`` và ``edges_reduced.parquet``.
             widths_path: Đường dẫn CSV bề rộng đường (``duong_pho_clean.csv``); truyền
                 ``None`` hoặc đường dẫn không tồn tại để bỏ qua thông tin bề rộng.
+            full_graph: Nếu ``True``, nạp đồ thị gốc ``data/stage1/{nodes,edges}_base.parquet``.
 
         Returns:
             Thực thể ``GraphData`` đã sẵn sàng dùng chung cho các môi trường.
@@ -186,8 +198,12 @@ class GraphData:
         Raises:
             OSError: Khi thiếu tệp parquet hoặc tệp tham số tốc độ.
         """
-        nodes = pd.read_parquet(directory / "nodes_reduced.parquet")
-        edges = pd.read_parquet(directory / "edges_reduced.parquet")
+        if full_graph:
+            nodes = pd.read_parquet(BASE_DIR / "nodes_base.parquet")
+            edges = pd.read_parquet(BASE_DIR / "edges_base.parquet")
+        else:
+            nodes = pd.read_parquet(directory / "nodes_reduced.parquet")
+            edges = pd.read_parquet(directory / "edges_reduced.parquet")
         params = json.loads(Path(PARAMS_FILE).read_text(encoding="utf-8"))
         widths = (
             road_widths(widths_path)
@@ -240,6 +256,46 @@ class GraphData:
         if len(nodes) == 0:
             return np.full(self.n, np.inf)
         return dijkstra(self._rev[slot], directed=True, indices=nodes, min_only=True)
+
+    def poi_distance_table(self, slot: str) -> np.ndarray:
+        """Trả về mảng C-contiguous ``(n, U)`` thời gian ngắn nhất tới từng nút POI duy nhất."""
+        table = self._poi_dist_table.get(slot)
+        if table is None:
+            if len(self._unique_poi_nodes) == 0:
+                table = np.empty((self.n, 0), dtype=np.float64)
+            else:
+                raw = dijkstra(self._rev[slot], directed=True, indices=self._unique_poi_nodes)
+                if raw.ndim == 1:
+                    raw = raw[np.newaxis, :]
+                table = np.ascontiguousarray(raw.T)
+            self._poi_dist_table[slot] = table
+        return table
+
+    def active_poi_rows(self, collected_mask: int, end_node: int) -> np.ndarray:
+        """Trả về chỉ số cột (trong ``poi_distance_table``) của các nút POI trung gian chưa thu thập."""
+        rows = [
+            idx
+            for idx, mask in enumerate(self._unique_poi_masks)
+            if (mask & ~collected_mask) and int(self._unique_poi_nodes[idx]) != end_node
+        ]
+        return np.asarray(rows, dtype=np.int64)
+
+    def nearest_poi_at(
+        self,
+        slot: str,
+        nodes: int | np.ndarray,
+        active_rows: np.ndarray,
+    ) -> float | np.ndarray:
+        """Tra nhanh thời gian tới POI trung gian gần nhất chỉ tại các nút ``nodes`` (khớp ``to_nearest``)."""
+        table = self.poi_distance_table(slot)
+        if np.ndim(nodes) == 0:
+            if len(active_rows) == 0:
+                return float("inf")
+            return float(table[int(nodes), active_rows].min())
+        node_arr = np.asarray(nodes, dtype=np.int64)
+        if len(active_rows) == 0:
+            return np.full(len(node_arr), np.inf, dtype=np.float64)
+        return table[node_arr][:, active_rows].min(axis=1)
 
 
 class BusRouteEnv(gym.Env):

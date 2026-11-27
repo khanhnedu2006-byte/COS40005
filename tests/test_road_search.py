@@ -232,6 +232,48 @@ def test_equal_score_tour_can_prefer_longer_wide_roads(algorithm):
     assert result.weighted_m < problem.direct.weighted_m
 
 
+def test_aco_uses_waypoint_ppo_reward():
+    from busroute.routing.road_metaheuristics import _waypoint_ppo_return
+
+    fixture = graph_fixture()
+    edges = pd.DataFrame(
+        [
+            (0, 2, "To P", 200),
+            (2, 1, "Narrow Out", 200),
+            (0, 3, "To Q", 1000),
+            (3, 1, "Wide Out", 1000),
+            (0, 1, "Direct", 3000),
+        ],
+        columns=["from_idx", "to_idx", "road_name", "length_m"],
+    )
+    points = [
+        point("A", 16, 108),
+        point("B", 16, 108.006),
+        point("P", 16.003, 108.003, 5),
+        point("Q", 16.006, 108.003, 5),
+    ]
+    graph = RoadGraph(
+        fixture.nodes,
+        edges,
+        {"to p": 8, "narrow out": 3.5, "to q": 8, "wide out": 8, "direct": 8},
+        points,
+        time_params=fixture.time_params,
+    )
+    problem = RoadProblem(graph, "A", "B", 2.5)
+    narrow_res = problem.evaluate(("A", "P", "B"))
+    wide_res = problem.evaluate(("A", "Q", "B"))
+    assert narrow_res is not None and wide_res is not None
+    # Theo quality cũ, via P (weighted 600 m) thắng via Q (2000 m), nhưng theo WaypointBusEnv thì via Q thắng.
+    assert narrow_res.quality > wide_res.quality
+    assert _waypoint_ppo_return(wide_res) > _waypoint_ppo_return(narrow_res)
+
+    # Không có cạnh P <-> Q nên không thể đi qua cả hai trong một chuyến; ACO chọn via Q (đường rộng).
+    assert problem.leg("P", "Q") is None and problem.leg("Q", "P") is None
+    chosen = search(problem, "aco", iterations=5, seed=0)
+    assert chosen.route == ("A", "Q", "B")
+    assert chosen.weighted_m == chosen.distance_m
+
+
 def test_fastest_path_can_be_longer_than_shortest_distance():
     from busroute.graph.ab_estimator import ABEstimator
 
@@ -350,3 +392,100 @@ def test_a_faster_connection_to_a_waypoint_can_make_the_whole_tour_slower():
     assert result.duration_s == 5510
     assert result.connection_slots[0] == "morning"
     assert graph.snapshot(problem, result)["duration_min"] == pytest.approx(5510 / 60)
+
+
+def test_poi_credit_follows_snapped_nodes_instead_of_edge_proximity():
+    import numpy as np
+
+    fixture = graph_fixture()
+    # Node 0 -> Node 1 passes right through (16.0, 108.003), while P_far_snap is
+    # 150 m north of node 1 (snaps to node 1 within 300 m) and P_mid sits 50 m off
+    # the edge midpoint (within 100 m of the edge, but snapped to node 2 instead).
+    nodes = pd.DataFrame(
+        [
+            (0, 16.0, 108.0),
+            (1, 16.0, 108.006),
+            (2, 16.00045, 108.003),
+        ],
+        columns=["node_idx", "lat", "lon"],
+    )
+    edges = pd.DataFrame(
+        [
+            (0, 1, "Direct", 600),
+            (0, 2, "Via Mid", 320),
+            (2, 1, "Mid Out", 320),
+        ],
+        columns=["from_idx", "to_idx", "road_name", "length_m"],
+    )
+    points = [
+        point("A", 16.0, 108.0),
+        point("B", 16.0, 108.006),
+        point("P_mid", 16.00045, 108.003, 5),
+        point("P_node", 16.00135, 108.006, 7),
+    ]
+    graph = RoadGraph(nodes, edges, {}, points, time_params=fixture.time_params)
+    problem = RoadProblem(graph, "A", "B", 1)
+
+    # Direct edge A->B does NOT credit P_mid (even though edge passes ~50 m away),
+    # and DOES credit P_node (snapped to B at ~150 m, > 100 m).
+    direct_snap = graph.snapshot(problem, problem.direct)
+    assert direct_snap["collected"] == ["P_node"]
+    assert direct_snap["score"] == 7
+
+    # Visiting node 2 credits P_mid as well.
+    via_snap = graph.snapshot(problem, problem.evaluate(("A", "P_mid", "B")))
+    assert via_snap["collected"] == ["P_mid", "P_node"]
+    assert via_snap["score"] == 12
+
+
+def test_render_path_expands_via_nodes_when_orig_coords_present():
+    import numpy as np
+
+    fixture = graph_fixture()
+    nodes = pd.DataFrame(
+        [(0, 16.0, 108.0), (1, 16.0, 108.006)],
+        columns=["node_idx", "lat", "lon"],
+    )
+    edges = pd.DataFrame(
+        [(0, 1, "Curved Road", 650, "0;1;2")],
+        columns=["from_idx", "to_idx", "road_name", "length_m", "via_nodes"],
+    )
+    orig_coords = np.array(
+        [
+            [108.001, 16.001],
+            [108.003, 16.002],
+            [108.005, 16.001],
+        ]
+    )
+    points = [point("A", 16.0, 108.0), point("B", 16.0, 108.006)]
+    graph = RoadGraph(
+        nodes, edges, {}, points, time_params=fixture.time_params, orig_coords=orig_coords
+    )
+    problem = RoadProblem(graph, "A", "B", 1, all_pois=False)
+    snap = graph.snapshot(problem, problem.direct)
+    assert snap["geometry"]["coordinates"] == [
+        [108.0, 16.0],
+        [108.001, 16.001],
+        [108.003, 16.002],
+        [108.005, 16.001],
+        [108.006, 16.0],
+    ]
+    assert len(snap["instructions"]) == 1
+    assert snap["instructions"][0]["distance_m"] == 650
+
+
+@pytest.mark.parametrize("algorithm", ["alns", "vns", "aco"])
+def test_parallel_workers_produce_feasible_deterministic_routes(algorithm):
+    graph = graph_fixture()
+    problem_seq = RoadProblem(graph, "A", "B", 0.95, workers=1)
+    problem_par = RoadProblem(graph, "A", "B", 0.95, workers=2)
+    r1 = search(problem_par, algorithm, iterations=8, seed=11, workers=2)
+    r2 = search(problem_par, algorithm, iterations=8, seed=11, workers=2)
+    r_seq = search(problem_seq, algorithm, iterations=8, seed=11, workers=1)
+    assert r1 == r2
+    assert r1.score == r_seq.score
+    assert r1.route == ("A", "P", "B")
+    with pytest.raises(ValueError, match="positive integer"):
+        RoadProblem(graph, "A", "B", 0.95, workers=0)
+    with pytest.raises(ValueError, match="positive integer"):
+        search(problem_seq, algorithm, iterations=4, workers=0)

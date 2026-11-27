@@ -128,11 +128,19 @@ COS40005/source_code/
 │   │   │   ├── connectivity.py
 │   │   │   └── export.py       #   Bước 6
 │   │   ├── routing/
-│   │   │   ├── env.py          #   TourRouteEnv
-│   │   │   ├── gnn.py          #   GraphEncoder, PolicyValueHead
-│   │   │   ├── ppo_train.py    #   GAE, PPO loss, train() [TODO]
-│   │   │   ├── baselines.py    #   Dijkstra, greedy
-│   │   │   └── evaluate.py     #   route_metrics
+│   │   │   ├── base.py               #   BaseRouteSolver, RoadDatasetSpec, RouteRequest, RouteOutput
+│   │   │   ├── road_graph.py         #   RoadGraph, RoadProblem, RoadResult, kết nối POI theo khung giờ
+│   │   │   ├── road_dijkstra.py      #   road_widths, road_instructions, find_route (facade web)
+│   │   │   ├── road_metaheuristics.py#   PoiBaseSolver: PoiDijkstra/ALNS/VNS/ACOSolver
+│   │   │   ├── edge_metaheuristics.py#   StreetBaseSolver: StreetDijkstra/ALNS/VNS/ACOSolver
+│   │   │   ├── ppo_env.py            #   GraphData (incl. poi_distance_table) & BusRouteEnv
+│   │   │   ├── ppo_train.py          #   Huấn luyện & suy luận StreetPPOSolver (MaskablePPO)
+│   │   │   ├── ppo_waypoint.py       #   WaypointTable, WaypointBusEnv & PoiPPOSolver
+│   │   │   ├── benchmark.py          #   So sánh ma trận 3×5 qua BaseRouteSolver
+│   │   │   ├── orienteering.py       #   Legacy ODMatrix
+│   │   │   ├── metaheuristics.py     #   Legacy OD-matrix ALNS/VNS/ACO
+│   │   │   ├── baselines.py          #   Legacy NetworkX baselines
+│   │   │   └── evaluate.py           #   route_metrics
 │   │   └── viz/
 │   │       └── route_map.py    #   folium
 │   └── driverface/             # ===== Phase 2 – offline only =====
@@ -166,5 +174,5 @@ COS40005/source_code/
 | `gps/clean.py`, `utils/*`, `graph/*`, `routing/env.py`, `baselines.py`, `evaluate.py`, `viz/` | Có code chạy được, cần thử trên dữ liệu thật |
 | `config/*` | Có khung; **các danh sách và đa giác phải do nhóm điền** (các mục `TODO`) |
 | `gps/map_match.py` | Bản đơn giản (nearest edge) |
-| `routing/gnn.py`, `ppo_train.py` | Khung; `train()` chưa viết |
+| `routing/base.py`, `road_metaheuristics.py`, `edge_metaheuristics.py`, `ppo_*.py`, `benchmark.py` | Đã chuẩn hóa theo `BaseRouteSolver` và chạy ma trận 3×5 (`poi`, `street-reduced`, `street-full`) |
 | `driverface/` | Mới có hàm đặc trưng; chờ video |

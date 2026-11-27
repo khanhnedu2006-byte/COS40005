@@ -120,27 +120,27 @@ MapLibre GL JS 5.24.0 is bundled locally; the OpenFreeMap
 basemap, labels and glyphs require internet access and a WebGL-capable browser.
 
 Choose endpoints from the Start and Destination dropdowns, or click a map marker.
-Select **Dijkstra**, **ALNS**, **VNS**, **ACO**, set a **time budget in minutes**,
-and choose Find route. ALNS, VNS and ACO also accept iterations and a random seed.
+Select **Dijkstra**, **ALNS**, **VNS**, **ACO**, or **PPO**, set a **time budget in minutes**,
+and choose Find route. ALNS, VNS and ACO also accept iterations and a random seed; PPO accepts a checkpoint path (defaulting to `checkpoints/ppo_reduced.zip`).
 Defaults are 240 minutes, departure 08:00, 100 iterations and seed 0. Cancel stops the isolated solver
 process. Only the final result is displayed.
 
-The web solvers use `data/stage1/nodes_base.parquet`, `edges_base.parquet`,
+The web solvers use `data/stage1_reduced/` when available (or `data/stage1/*_base.parquet`),
 `data/final/duong_pho_clean.csv`, and configured POIs/hubs. Dijkstra, ALNS, VNS and ACO build directed
-POI connections on the full road graph. ALNS, VNS and ACO
-insert POI detours such as A → P → B, retaining them when they improve the score
-within the time budget. Scores count POIs passed along connecting roads once.
-Score ties prefer lower narrow-road-weighted distance, then estimated travel time and physical distance.
-Known widths below 5.5 m have a 2× cost for this tie-break; unknown widths are
-unpenalized. Dijkstra supplies the fastest-estimated-time baseline.
+POI connections on the road graph (`via_nodes` restored when using the reduced graph). ALNS and VNS
+insert POI detours such as A → P → B, maximizing unique POI score with ties broken by 2× narrow-road-weighted distance, estimated time, and physical distance, while ACO optimizes PPO's reward/penalty objective. Scores credit each POI once when a route visits the graph node it snaps to (matching PPO).
+Dijkstra supplies the fastest-estimated-time baseline.
+
+To benchmark all 5 algorithms across the 3 execution modes (`poi`, `street-reduced`, `street-full`) from the CLI:
+
+```bash
+python scripts/evaluate_algorithms.py --mode all --start H01 --end H04 --budget-min 90 --departure 08:00 --iterations 24
+```
 
 The result includes numbered waypoints, unique POI score, estimated travel time and physical distance,
 highlighted passed POIs, width coverage and estimated road directions. Clicking
 a direction focuses the map at that road change. Download JSON saves the same
-route geometry and metrics. The base tables do not retain road curves, so lines
-between graph nodes and turn directions are approximate. POIs must be within
-100 m of that approximate path to earn score; selecting a waypoint alone does
-not award it. Times are estimates using the historical TomTom-calibrated road-class coefficients in `configs/estimator_params.json`. Each edge time is length × seconds/metre at that edge's departure slot; the clock advances after every edge for all four road solvers. The full graph retains road classes without a calibrated group using the local-road coefficients. No per-connection fixed overhead is added, matching the earlier road-edge dataset builder. Live traffic and legal bus restrictions are not modeled.
+route geometry and metrics. With the reduced graph, `via_nodes` expands intermediate road curves back to base-node coordinates. POIs earn credit only when the route visits their snapped road node (within 300 m). Times are estimates using the historical TomTom-calibrated road-class coefficients in `configs/estimator_params.json`. Each edge time is length × seconds/metre at that edge's departure slot; the clock advances after every edge for all road solvers. The road graph retains road classes without a calibrated group using the local-road coefficients. No per-connection fixed overhead is added, matching the earlier road-edge dataset builder. Live traffic and legal bus restrictions are not modeled.
 
 Points more than 300 m from a road node stay visible but cannot be selected as
 endpoints or inserted waypoints. Their map popups explain the snapping limit.

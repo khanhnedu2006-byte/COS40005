@@ -26,17 +26,18 @@ uv run --extra visualization python scripts/visualize_orienteering.py --algorith
 Choose Dijkstra, ALNS, VNS, ACO, or reduced-graph PPO with distinct configured
 endpoints, a minute budget, and a departure time. Defaults are 240 minutes,
 08:00, 100 iterations, and seed 0. Dijkstra compares candidate connections by
-estimated travel time. ALNS, VNS, and ACO maximize unique POI score within that
-time, preferring lower narrow-road-weighted distance when scores tie. Known
+estimated travel time. ALNS and VNS maximize unique POI score within that
+time, preferring lower narrow-road-weighted distance when scores tie (known
 widths below 5.5 m receive 2× cost for this tie-break; unknown widths remain
-unpenalized.
+unpenalized), whereas ACO maximizes the `WaypointBusEnv` PPO reward function
+(`score - 0.005 * duration_min - 0.5 * narrow_km + 1.0`).
 
 The PPO solver uses a saved SB3 `MaskablePPO` ZIP checkpoint (defaulting to
 `checkpoints/ppo_reduced.zip`) for deterministic edge-by-edge inference on the
 reduced stage1 road graph (with `via_nodes` geometry reconstruction and
 road-width awareness). See the [PPO guide](ppo.md).
 
-Each isolated worker loads the complete base graph once. Dijkstra, ALNS, VNS,
+Each isolated worker loads the directed road graph once (using the lossless reduced graph in `data/stage1_reduced/` when available, with `via_nodes` geometry expansion, matching PPO). Dijkstra, ALNS, VNS,
 and ACO build slot-specific directed Dijkstra trees for the selected sources.
 POI connections, their edge IDs, and passed-POI masks are cached for search
 trials. A POI detour `A → P → B` uses two connections even if the direct
@@ -44,12 +45,11 @@ trials. A POI detour `A → P → B` uses two connections even if the direct
 final leg. The solver caches one path per point pair and traffic slot and
 compares their actual replay times when a trip crosses slots.
 
-Inputs are `data/stage1/nodes_base.parquet`, `edges_base.parquet`,
+Inputs are `data/stage1/nodes_base.parquet`, `edges_base.parquet` (or `data/stage1_reduced/`),
 `data/final/duong_pho_clean.csv`, and `configs/pois.py` / `hubs.py`. Points
 beyond the 300 m road-node snapping limit stay on the map with an explanation
 but are disabled as endpoints and excluded as inserted waypoints. POIs earn
-score once within 100 m of the approximate road geometry; selecting a waypoint
-does not automatically award its score.
+score once when a route visits the graph node they snap to (matching PPO).
 
 ## Process and HTTP contracts
 
@@ -85,10 +85,7 @@ from the same cached edge sequence. Numbered waypoint buttons and road
 directions focus the map. Passed POIs are highlighted in gold; their names
 appear in the guide.
 
-Road shapes are approximated by lines between graph nodes because the base
-Parquet tables omit edge curves (except for PPO on the reduced graph, which
-expands `via_nodes` back through base-node coordinates). Turn instructions use
-those chords and are explicitly labeled as estimates. Travel time uses the
+Road shapes expand `via_nodes` back through base-node coordinates when running on the reduced graph (across Dijkstra, ALNS, VNS, ACO, and PPO), while turn instructions use node chords and are explicitly labeled as estimates. Travel time uses the
 historical road-class × slot coefficients calibrated to TomTom. Each edge uses
 its own departure slot, shared by all road solvers. Live traffic, dwell times,
 and legal bus restrictions are not modeled. The central-ring overlay supplies

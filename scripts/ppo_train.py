@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from busroute.routing.ppo_env import GraphData  # noqa: E402
-from busroute.routing.ppo_train import CHECKPOINT, evaluate, train  # noqa: E402
+from busroute.routing.ppo_train import CHECKPOINT, CHECKPOINT_FULL, evaluate, train  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -68,13 +68,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Số episode đánh giá trên tập kịch bản cố định sau khi train (0 = bỏ qua).",
     )
     ap.add_argument(
+        "--graph",
+        choices=("reduced", "full"),
+        default="reduced",
+        help="Chọn đồ thị huấn luyện: reduced (44.6k nút) hoặc full (93.8k nút).",
+    )
+    ap.add_argument(
         "--checkpoint",
-        default=str(CHECKPOINT),
+        default=None,
         help="Đường dẫn tệp .zip lưu trọng số mô hình PPO sau khi huấn luyện.",
     )
     ap.add_argument(
         "--report",
-        default=str(ROOT / "results" / "ppo_reduced.json"),
+        default=None,
         help="Đường dẫn tệp JSON lưu bảng kết quả đánh giá các chính sách.",
     )
     ap.add_argument(
@@ -93,11 +99,22 @@ def main(argv: list[str] | None = None) -> None:
         argv: Danh sách tham số dòng lệnh tùy chọn (mặc định đọc từ ``sys.argv``).
     """
     args = build_parser().parse_args(argv)
+    use_full = args.graph == "full"
+    checkpoint = (
+        Path(args.checkpoint)
+        if args.checkpoint is not None
+        else (CHECKPOINT_FULL if use_full else CHECKPOINT)
+    )
+    report_path = (
+        Path(args.report)
+        if args.report is not None
+        else ROOT / "results" / ("ppo_full.json" if use_full else "ppo_reduced.json")
+    )
 
-    graph = GraphData.load()
+    graph = GraphData.load(full_graph=use_full)
     known_widths = int(np.isfinite(graph.width).sum()) if hasattr(graph, "width") else 0
     print(
-        f"graph: {graph.n} nodes, {len(graph.dst)} edges, {len(graph.poi_node)} POIs (start/end), "
+        f"graph ({args.graph}): {graph.n} nodes, {len(graph.dst)} edges, {len(graph.poi_node)} POIs (start/end), "
         f"max out-degree {graph.max_degree}, known-width edges {known_widths}",
         flush=True,
     )
@@ -108,7 +125,7 @@ def main(argv: list[str] | None = None) -> None:
         args.update_passes,
         args.batch_size,
         seed=args.seed,
-        checkpoint=Path(args.checkpoint),
+        checkpoint=checkpoint,
         verbose=args.verbose,
     )
     report = []
@@ -117,8 +134,8 @@ def main(argv: list[str] | None = None) -> None:
             row = evaluate(graph, name, model, args.eval_count)
             print(row, flush=True)
             report.append(row)
-        Path(args.report).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

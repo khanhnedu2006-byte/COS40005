@@ -106,6 +106,12 @@ step):
     **245** possible keys.
   - `to_nearest(slot, nodes)` computes multi-source shortest time from every node
     to the nearest unvisited intermediate POI (`min_only=True`).
+  - `poi_distance_table(slot)` / `nearest_poi_at(slot, nodes, active_rows)`
+    lazily precomputes one C-contiguous `(n, U)` reverse-Dijkstra matrix across
+    all unique snapped POI nodes (`U <= 49`) per slot so street-level metaheuristics
+    (`edge_metaheuristics.py`) can query intermediate-POI distances point-wise in
+    microseconds (shared across `fork` workers via copy-on-write) instead of
+    running full-graph Dijkstras inside every step and cycle-pruning check.
 
 ### 3.2 Episode initialization (`BusRouteEnv.reset`)
 
@@ -289,8 +295,9 @@ Results recorded in `results/ppo_reduced.json` (30 fixed evaluation episodes):
 | `--batch-size` | `256` | Minibatch size during PPO-clip updates |
 | `--seed` | `0` | RNG seed for model and scenario sampling |
 | `--eval-count` | `30` | Fixed evaluation episodes per policy (`0` skips evaluation) |
-| `--checkpoint` | `checkpoints/ppo_reduced.zip` | Output `.zip` path for the trained model |
-| `--report` | `results/ppo_reduced.json` | Output JSON path for evaluation metrics |
+| `--graph` | `reduced` | Training graph: `reduced` (44,606 nodes) or `full` (93,751 nodes) |
+| `--checkpoint` | `checkpoints/ppo_reduced.zip` | Output `.zip` path for the trained model (`checkpoints/ppo_full.zip` when `--graph full`) |
+| `--report` | `results/ppo_reduced.json` | Output JSON path for evaluation metrics (`results/ppo_full.json` when `--graph full`) |
 | `-v`, `--verbose` | `False` | Print every step (node/POI label, road name, width, rewards, budget) |
 
 ```bash
@@ -340,3 +347,18 @@ width (`green` $\ge 5.5$ m, `red` $< 5.5$ m, `amber` unknown).
 python scripts/visualize_ppo.py
 python scripts/visualize_ppo.py --start P001 --end P010 --seed 0 --out results/ppo_p001_p010.html
 ```
+
+### `3 × 5` Matrix Evaluation & Full-Graph / POI PPO Checkpoints
+
+- **`poi` PPO (`scripts/ppo_waypoint_train.py`, `src/busroute/routing/ppo_waypoint.py`)**:
+  trains `MaskablePPO` on `WaypointBusEnv` (49 POI waypoint actions + finish action) and
+  evaluates deterministically over `RoadProblem` via `PoiPPOSolver` (`infer_waypoint_route`), saving to
+  `checkpoints/ppo_waypoint_reduced.zip`. Recorded 30-episode evaluation (`results/ppo_waypoint_reduced.json`, 80 epochs × 64 eps): PPO achieves **102.77** mean POI score (`23.40` POIs, `0.00 m` narrow, `100%` success), outperforming waypoint `greedy` (**100.66**, `22.90` POIs).
+- **`street-full` PPO (`scripts/ppo_train.py --graph full`)**:
+  trains `MaskablePPO` directly on the unreduced 93,751-node base graph (`data/stage1/`),
+  saving to `checkpoints/ppo_full.zip`. Recorded 30-episode evaluation (`results/ppo_full.json`, 50 epochs × 20 eps): PPO achieves **67.51** mean POI score (`15.40` POIs, `7.65 m` narrow, `100%` success), compared with `greedy` (**67.94**, `15.50` POIs, `0.00 m` narrow).
+- **ACO Reward Alignment & Street-Full Optimization**: both `PoiACOSolver` (`road_metaheuristics.py`) and `StreetACOSolver` (`edge_metaheuristics.py`) optimize the exact `WaypointBusEnv` / `BusRouteEnv` episode return, sharing `BaseRouteSolver` (`base.py`) with all other solvers. On `street-reduced` and `street-full`, `StreetACOSolver` pairs exact `BusRouteEnv` return ranking (using `GraphData.poi_distance_table`, cached cycle-prune ranks, and O(1) `slot_of` lookup) with a scale-invariant, severity-weighted narrow-avoiding transition desirability (`_ppo_step_desirability`).
+- **`3 × 5` Comparison (`scripts/evaluate_algorithms.py --mode all`)**: benchmarks
+  `[poi, street-reduced, street-full] × [dijkstra, alns, vns, aco, ppo]` using
+  `--poi-checkpoint`, `--reduced-checkpoint`, `--full-checkpoint`, and optional `--workers N`
+  (default `1`).

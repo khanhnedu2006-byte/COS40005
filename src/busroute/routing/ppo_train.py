@@ -38,6 +38,8 @@ from sb3_contrib import MaskablePPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from busroute.graph.ab_estimator import PARAMS_FILE
+from busroute.routing.base import RoadDatasetSpec, RouteRequest
+from busroute.routing.edge_metaheuristics import EdgeWalk, StreetBaseSolver, StreetContext
 from busroute.routing.ppo_env import (
     EDGE_FEATURES,
     GLOBAL_FEATURES,
@@ -45,11 +47,12 @@ from busroute.routing.ppo_env import (
     BusRouteEnv,
     GraphData,
 )
-from busroute.routing.road_dijkstra import road_instructions, road_widths
+from busroute.routing.road_dijkstra import road_widths
 from busroute.routing.road_graph import NoRoadRouteError
 from busroute.utils.timeslots import slot_of
 
 CHECKPOINT = Path(__file__).resolve().parents[3] / "checkpoints" / "ppo_reduced.zip"
+CHECKPOINT_FULL = Path(__file__).resolve().parents[3] / "checkpoints" / "ppo_full.zip"
 
 
 def run_episode(
@@ -453,6 +456,82 @@ def evaluate(
     }
 
 
+class StreetPPOSolver(StreetBaseSolver):
+    """Bộ giải ``MaskablePPO`` ở mức cạnh kế thừa ``StreetBaseSolver``."""
+
+    name = "ppo"
+
+    def __init__(
+        self,
+        checkpoint: str | Path,
+        *,
+        model: MaskablePPO | None = None,
+        max_steps: int = 1000,
+    ) -> None:
+        super().__init__(max_steps=max_steps)
+        self.checkpoint = Path(checkpoint)
+        self.model = model
+
+    def solve(self, context: StreetContext, request: RouteRequest) -> EdgeWalk:
+        graph = context.graph
+        if request.start not in graph.point_by_id or request.end not in graph.point_by_id:
+            raise ValueError("Start and end must be available road points within 300 m")
+
+        start_node, _ = graph.point_by_id[request.start]
+        end_node, _ = graph.point_by_id[request.end]
+        direct = float(graph.to_target(slot_of(request.start_minute), end_node)[start_node])
+        if not math.isfinite(direct) or direct > request.budget_s + 1e-6:
+            raise NoRoadRouteError("No directed route found within the time budget")
+
+        model = self.model
+        if model is None:
+            if not self.checkpoint.is_file():
+                raise FileNotFoundError(f"PPO checkpoint not found: {self.checkpoint}")
+            model = MaskablePPO.load(self.checkpoint, device="cpu")
+        expected_shape = (graph.max_degree * EDGE_FEATURES + GLOBAL_FEATURES,)
+        if tuple(model.observation_space.shape or ()) != expected_shape:
+            raise ValueError(
+                f"Checkpoint '{self.checkpoint}' has observation shape "
+                f"{model.observation_space.shape}, expected {expected_shape}"
+            )
+
+        env = BusRouteEnv(graph)
+        obs, _ = env.reset(
+            seed=0,
+            options={
+                "start": request.start,
+                "end": request.end,
+                "start_minute": request.start_minute,
+                "budget_s": request.budget_s,
+            },
+        )
+
+        edges_taken: list[int] = []
+        done = False
+        info: dict[str, Any] = {}
+        while not done:
+            request.check_cancelled()
+            mask = env.action_masks()
+            action, _ = model.predict(obs, action_masks=mask, deterministic=True)
+            obs, _, terminated, truncated, info = env.step(int(action))
+            edges_taken.append(int(info["edge_idx"]))
+            done = terminated or truncated
+
+        if not info.get("success"):
+            raise ValueError("PPO route did not reach the destination within the time budget")
+        walk = self._evaluate_walk(
+            graph,
+            start_node,
+            end_node,
+            edges_taken,
+            request.start_minute,
+            request.budget_s,
+        )
+        if walk is None:
+            raise ValueError("PPO route did not reach the destination within the time budget")
+        return walk
+
+
 def infer_route(
     nodes_path: str | Path,
     edges_path: str | Path,
@@ -466,162 +545,35 @@ def infer_route(
     start_minute: int = 480,
     cancelled: Callable[[], bool] = lambda: False,
     reduced_dir: Path = REDUCED_DIR,
+    use_reduced: bool = True,
+    graph: GraphData | None = None,
+    model: MaskablePPO | None = None,
+    orig_coords: np.ndarray | None = None,
 ) -> dict[str, Any]:
-    """Suy luận một lộ trình hoàn chỉnh bằng checkpoint PPO và trả về ``RouteSnapshot`` cho Web.
-
-    Khi ``nodes_path`` là bảng gốc ``data/stage1/nodes_base.parquet`` và đã có sẵn
-    đồ thị rút gọn trong ``reduced_dir``, hàm tự động dùng đồ thị rút gọn để khớp với
-    mô hình đã train và bung ``via_nodes`` khi dựng hình học ``LineString``.
-
-    Args:
-        nodes_path: Đường dẫn Parquet bảng nút đầu vào.
-        edges_path: Đường dẫn Parquet bảng cạnh đầu vào.
-        widths_path: Đường dẫn CSV bề rộng đường đã làm sạch.
-        points: Danh sách metadata điểm (POI và hub).
-        start: Mã điểm xuất phát (POI hoặc hub).
-        end: Mã điểm đích khác ``start``.
-        checkpoint: Đường dẫn tệp ``.zip`` của mô hình ``MaskablePPO``.
-        budget_min: Ngân sách thời gian dương và hữu hạn (phút).
-        start_minute: Giờ khởi hành tính bằng phút trong ngày (0..1439).
-        cancelled: Hàm kiểm tra hủy tác vụ cộng tác; trả về ``True`` để dừng.
-        reduced_dir: Thư mục chứa đồ thị rút gọn ``stage1_reduced``.
-
-    Returns:
-        Dictionary đúng chuẩn ``RouteSnapshot`` gồm ``route``, ``score``,
-        ``distance_km``, ``duration_min``, ``collected``, ``geometry``, ``narrow_m``,
-        ``unknown_width_m`` và ``instructions``.
-
-    Raises:
-        InterruptedError: Khi ``cancelled()`` trả về ``True``.
-        ValueError: Khi tham số đầu vào không hợp lệ, checkpoint lệch observation space,
-            hoặc không tới được đích trong ngân sách.
-        NoRoadRouteError: Khi không có đường đi hợp lệ tới đích trong ngân sách.
-        FileNotFoundError: Khi không tìm thấy tệp ``checkpoint``.
-    """
-    if cancelled():
-        raise InterruptedError("Search cancelled")
-    if start == end:
-        raise ValueError("Choose distinct known endpoints")
-    if not math.isfinite(budget_min) or budget_min <= 0:
-        raise ValueError("Time budget must be positive and finite")
-    if (
-        isinstance(start_minute, bool)
-        or not isinstance(start_minute, int)
-        or not 0 <= start_minute < 1440
-    ):
-        raise ValueError("Departure must be a minute within the day")
-
-    nodes_p = Path(nodes_path).resolve()
-    base_nodes = (Path(__file__).resolve().parents[3] / "data" / "stage1" / "nodes_base.parquet").resolve()
-    orig_coords = None
-    if (
-        nodes_p == base_nodes
-        and (reduced_dir / "nodes_reduced.parquet").is_file()
-        and (reduced_dir / "edges_reduced.parquet").is_file()
-    ):
-        from busroute.viz.ppo_viz import load_orig_coords
-
-        nodes_df = pd.read_parquet(reduced_dir / "nodes_reduced.parquet")
-        edges_df = pd.read_parquet(reduced_dir / "edges_reduced.parquet")
-        orig_coords = load_orig_coords(nodes_p)
-    else:
-        nodes_df = pd.read_parquet(nodes_path)
-        edges_df = pd.read_parquet(edges_path)
-
-    widths = road_widths(widths_path)
-    params = json.loads(Path(PARAMS_FILE).read_text(encoding="utf-8"))
-    graph = GraphData(nodes_df, edges_df, list(points), params, widths=widths)
-
-    if start not in graph.point_by_id or end not in graph.point_by_id:
-        raise ValueError("Start and end must be available road points within 300 m")
-
-    start_node, _ = graph.point_by_id[start]
-    end_node, _ = graph.point_by_id[end]
-    direct = float(graph.to_target(slot_of(start_minute), end_node)[start_node])
-    if not math.isfinite(direct) or direct > budget_min * 60.0 + 1e-6:
-        raise NoRoadRouteError("No directed route found within the time budget")
-
-    ckpt = Path(checkpoint)
-    if not ckpt.is_file():
-        raise FileNotFoundError(f"PPO checkpoint not found: {ckpt}")
-    model = MaskablePPO.load(ckpt, device="cpu")
-    expected_shape = (graph.max_degree * EDGE_FEATURES + GLOBAL_FEATURES,)
-    if tuple(model.observation_space.shape or ()) != expected_shape:
-        raise ValueError(
-            f"Checkpoint '{ckpt}' has observation shape {model.observation_space.shape}, "
-            f"expected {expected_shape}"
+    """Suy luận một lộ trình hoàn chỉnh bằng checkpoint PPO và trả về ``RouteSnapshot`` cho Web."""
+    request = RouteRequest(
+        start=start,
+        end=end,
+        budget_min=budget_min,
+        start_minute=start_minute,
+        cancelled=cancelled,
+    )
+    solver = StreetPPOSolver(checkpoint, model=model)
+    context = (
+        StreetContext(graph=graph, orig_coords=orig_coords)
+        if graph is not None
+        else None
+    )
+    data = (
+        None
+        if context is not None
+        else RoadDatasetSpec.from_raw(
+            nodes_path,
+            edges_path,
+            widths_path,
+            points,
+            reduced_dir=reduced_dir,
+            use_reduced=use_reduced,
         )
-
-    env = BusRouteEnv(graph)
-    obs, _ = env.reset(
-        seed=0,
-        options={
-            "start": start,
-            "end": end,
-            "start_minute": start_minute,
-            "budget_s": budget_min * 60.0,
-        },
     )
-
-    step_coords: list[list[float]] = [
-        [float(graph.coords[start_node, 0]), float(graph.coords[start_node, 1])]
-    ]
-    geom_coords: list[list[float]] = [
-        [float(graph.coords[start_node, 0]), float(graph.coords[start_node, 1])]
-    ]
-    details: list[tuple[float, float | None, str]] = []
-    route_ids: list[str] = [start]
-    distance_m = 0.0
-    done = False
-    info: dict[str, Any] = {}
-
-    while not done:
-        if cancelled():
-            raise InterruptedError("Search cancelled")
-        mask = env.action_masks()
-        action, _ = model.predict(obs, action_masks=mask, deterministic=True)
-        obs, _, terminated, truncated, info = env.step(int(action))
-        to_node = int(info["to_node"])
-        end_lonlat = [float(graph.coords[to_node, 0]), float(graph.coords[to_node, 1])]
-        step_coords.append(end_lonlat)
-        edge_idx = int(info["edge_idx"])
-        via_raw = graph.via_nodes[edge_idx] if hasattr(graph, "via_nodes") else ""
-        if orig_coords is not None and via_raw:
-            for token in via_raw.split(";"):
-                if not token:
-                    continue
-                vid = int(token)
-                if 0 <= vid < len(orig_coords) and np.all(np.isfinite(orig_coords[vid])):
-                    geom_coords.append(
-                        [float(orig_coords[vid, 0]), float(orig_coords[vid, 1])]
-                    )
-        geom_coords.append(end_lonlat)
-        details.append((float(info["length_m"]), info["width_m"], str(info["road_name"])))
-        distance_m += float(info["length_m"])
-        for poi_idx in graph.pois_at.get(to_node, ()):
-            pid = graph.poi_ids[poi_idx]
-            if pid not in route_ids and pid != end:
-                route_ids.append(pid)
-        done = terminated or truncated
-
-    if not info.get("success"):
-        raise ValueError("PPO route did not reach the destination within the time budget")
-    route_ids.append(end)
-
-    scale = np.array(
-        [111320 * math.cos(math.radians(float(graph.coords[:, 1].mean()))), 111320.0]
-    )
-    collected = sorted(
-        graph.poi_ids[i] for i in range(len(graph.poi_ids)) if env.collected[i]
-    )
-    return {
-        "route": route_ids,
-        "score": float(info["score"]),
-        "distance_km": distance_m / 1000.0,
-        "duration_min": float(info["elapsed_min"]),
-        "collected": collected,
-        "geometry": {"type": "LineString", "coordinates": geom_coords},
-        "narrow_m": float(info["narrow_m"]),
-        "unknown_width_m": float(info["unknown_width_m"]),
-        "instructions": road_instructions(step_coords, details, scale),
-    }
+    return solver.solve_snapshot(request, data=data, context=context)

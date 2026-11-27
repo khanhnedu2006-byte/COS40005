@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import json
 import runpy
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from dataclasses import dataclass, field
 from itertools import pairwise
@@ -23,6 +24,49 @@ from busroute.graph.ab_estimator import GROUP_OF, GROUPS, SLOTS, PARAMS_FILE
 SLOT_STARTS = tuple(
     (to_minutes(start) * 60, slot) for slot, (start, _) in TIME_SLOTS.items()
 )
+DEFAULT_BASE_NODES = PARAMS_FILE.parents[1] / "data" / "stage1" / "nodes_base.parquet"
+DEFAULT_REDUCED_DIR = PARAMS_FILE.parents[1] / "data" / "stage1_reduced"
+
+
+def resolve_road_tables(
+    nodes_path: str | Path,
+    edges_path: str | Path,
+    *,
+    reduced_dir: str | Path | None = None,
+    use_reduced: bool = True,
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray | None]:
+    """Tự động chuyển sang đồ thị rút gọn khi ``use_reduced=True`` và sẵn sàng tệp rút gọn."""
+    nodes_p = Path(nodes_path).resolve()
+    red_dir = Path(reduced_dir) if reduced_dir is not None else DEFAULT_REDUCED_DIR
+    base_nodes = DEFAULT_BASE_NODES.resolve()
+
+    if (
+        use_reduced
+        and nodes_p == base_nodes
+        and (red_dir / "nodes_reduced.parquet").is_file()
+        and (red_dir / "edges_reduced.parquet").is_file()
+    ):
+        from busroute.viz.ppo_viz import load_orig_coords
+
+        return (
+            pd.read_parquet(red_dir / "nodes_reduced.parquet"),
+            pd.read_parquet(red_dir / "edges_reduced.parquet"),
+            load_orig_coords(nodes_p),
+        )
+
+    nodes_df = pd.read_parquet(nodes_path)
+    edges_df = pd.read_parquet(edges_path)
+    orig_coords = None
+    if (
+        use_reduced
+        and "via_nodes" in edges_df.columns
+        and nodes_p == (red_dir / "nodes_reduced.parquet").resolve()
+        and DEFAULT_BASE_NODES.is_file()
+    ):
+        from busroute.viz.ppo_viz import load_orig_coords
+
+        orig_coords = load_orig_coords(DEFAULT_BASE_NODES)
+    return nodes_df, edges_df, orig_coords
 
 
 class NoRoadRouteError(ValueError):
@@ -81,9 +125,18 @@ class RoadGraph:
     """Load graph attributes once; preserve the selected parallel-edge identity."""
 
     def __init__(
-        self, nodes, edges, widths, points, cancelled=lambda: False, *, time_params=None
+        self,
+        nodes,
+        edges,
+        widths,
+        points,
+        cancelled=lambda: False,
+        *,
+        time_params=None,
+        orig_coords=None,
     ):
         self.cancelled = cancelled
+        self.orig_coords = orig_coords
         self.time_params = (
             time_params
             if time_params is not None
@@ -150,34 +203,45 @@ class RoadGraph:
                 "Unnamed road",
             )
             self.labels.append(label.strip().replace(" | ", " / "))
-        self.masks = [0] * len(self.edges)
-        a = self.coords[self.u] * self.scale
-        delta = (self.coords[self.v] - self.coords[self.u]) * self.scale
-        denominator = np.einsum("ij,ij->i", delta, delta)
+        self.via_nodes = (
+            self.edges["via_nodes"].fillna("").astype(str).tolist()
+            if "via_nodes" in self.edges.columns
+            else [""] * len(self.edges)
+        )
+        # Gán điểm POI đúng tại nút đồ thị mà POI snap vào (khớp với BusRouteEnv/PPO).
+        self.node_masks: dict[int, int] = {}
         for index, poi in enumerate(self.pois):
             self.check_cancelled()
-            point = self.points[poi]
-            q = np.array([point["lon"], point["lat"]]) * self.scale
-            ratio = np.divide(
-                np.einsum("ij,ij->i", q - a, delta),
-                denominator,
-                out=np.zeros_like(denominator),
-                where=denominator > 0,
-            )
-            nearest = a + np.clip(ratio, 0, 1)[:, None] * delta
-            for edge in np.flatnonzero(np.sum((nearest - q) ** 2, axis=1) <= 100**2):
-                self.masks[edge] |= 1 << index
+            if poi in self.snapped:
+                node = self.snapped[poi]
+                self.node_masks[node] = self.node_masks.get(node, 0) | (1 << index)
+        self.masks = [
+            self.node_masks.get(int(u), 0) | self.node_masks.get(int(v), 0)
+            for u, v in zip(self.u, self.v)
+        ]
 
     @classmethod
     def from_files(
-        cls, nodes_path, edges_path, widths_path, points, cancelled=lambda: False
+        cls,
+        nodes_path,
+        edges_path,
+        widths_path,
+        points,
+        cancelled=lambda: False,
+        *,
+        reduced_dir=None,
+        use_reduced=True,
     ):
+        nodes_df, edges_df, orig_coords = resolve_road_tables(
+            nodes_path, edges_path, reduced_dir=reduced_dir, use_reduced=use_reduced
+        )
         return cls(
-            pd.read_parquet(nodes_path),
-            pd.read_parquet(edges_path),
+            nodes_df,
+            edges_df,
             road_widths(widths_path),
             points,
             cancelled,
+            orig_coords=orig_coords,
         )
 
     def check_cancelled(self):
@@ -185,13 +249,7 @@ class RoadGraph:
             raise InterruptedError("Search cancelled")
 
     def node_mask(self, index):
-        mask = 0
-        for bit, poi in enumerate(self.pois):
-            p = self.points[poi]
-            delta = (self.coords[index] - [p["lon"], p["lat"]]) * self.scale
-            if float(np.dot(delta, delta)) <= 100**2:
-                mask |= 1 << bit
-        return mask
+        return self.node_masks.get(int(index), 0)
 
     def mask_score(self, mask):
         return sum(score for bit, score in enumerate(self.scores) if mask & (1 << bit))
@@ -243,11 +301,30 @@ class RoadGraph:
             raise ValueError(
                 "Road route did not reach the destination within the time budget"
             )
-        coords = [self.coords[source].tolist()] + [
+        step_coords = [self.coords[source].tolist()] + [
             self.coords[self.v[e]].tolist() for e in edges
         ]
-        if len(coords) == 1:
-            coords.append(coords[0][:])
+        geom_coords = [self.coords[source].tolist()]
+        for edge in edges:
+            via_raw = self.via_nodes[edge]
+            if self.orig_coords is not None and via_raw:
+                for token in via_raw.split(";"):
+                    if not token:
+                        continue
+                    vid = int(token)
+                    if 0 <= vid < len(self.orig_coords) and np.all(
+                        np.isfinite(self.orig_coords[vid])
+                    ):
+                        geom_coords.append(
+                            [
+                                float(self.orig_coords[vid, 0]),
+                                float(self.orig_coords[vid, 1]),
+                            ]
+                        )
+            geom_coords.append(self.coords[self.v[edge]].tolist())
+        if len(step_coords) == 1:
+            step_coords.append(step_coords[0][:])
+            geom_coords.append(geom_coords[0][:])
         details = [
             (
                 float(self.lengths[e]),
@@ -262,7 +339,7 @@ class RoadGraph:
             "distance_km": sum(self.lengths[e] for e in edges) / 1000,
             "duration_min": elapsed / 60,
             "collected": [p for bit, p in enumerate(self.pois) if mask & (1 << bit)],
-            "geometry": {"type": "LineString", "coordinates": coords},
+            "geometry": {"type": "LineString", "coordinates": geom_coords},
             "narrow_m": sum(
                 length
                 for length, width, _ in details
@@ -271,7 +348,7 @@ class RoadGraph:
             "unknown_width_m": sum(
                 length for length, width, _ in details if width is None
             ),
-            "instructions": road_instructions(coords, details, self.scale),
+            "instructions": road_instructions(step_coords, details, self.scale),
         }
 
     def snapshot(self, problem, result):
@@ -388,7 +465,10 @@ class RoadProblem:
         start_minute=480,
         all_pois=True,
         waypoint_connections=None,
+        workers=1,
     ):
+        if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
+            raise ValueError("workers must be a positive integer")
         if start == end or start not in graph.points or end not in graph.points:
             raise ValueError("Choose distinct known endpoints")
         for point in (start, end):
@@ -418,6 +498,7 @@ class RoadProblem:
         self.target = target
         self.sources = sorted({graph.snapped[p] for p in points})
         self.waypoint_connections = waypoint_connections
+        self.workers = workers
         self.slot_trees, self.cache, self.score_cache = {}, {}, {}
         self.dijkstra_calls = 0
         direct = self.evaluate((start, end))
@@ -436,12 +517,32 @@ class RoadProblem:
             )
             edge_of = {(int(graph.u[e]), int(graph.v[e])): int(e) for e in chosen}
             trees = {}
-            for source in self.sources:
+            if self.workers > 1 and len(self.sources) > 1:
                 graph.check_cancelled()
-                trees[source] = dijkstra(
-                    matrix, directed=True, indices=source, return_predecessors=True
-                )
-                self.dijkstra_calls += 1
+                max_workers = min(self.workers, len(self.sources))
+                with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    results = list(
+                        pool.map(
+                            lambda src: dijkstra(
+                                matrix,
+                                directed=True,
+                                indices=src,
+                                return_predecessors=True,
+                            ),
+                            self.sources,
+                        )
+                    )
+                graph.check_cancelled()
+                for source, res in zip(self.sources, results):
+                    trees[source] = res
+                    self.dijkstra_calls += 1
+            else:
+                for source in self.sources:
+                    graph.check_cancelled()
+                    trees[source] = dijkstra(
+                        matrix, directed=True, indices=source, return_predecessors=True
+                    )
+                    self.dijkstra_calls += 1
             self.slot_trees[slot] = trees, edge_of
         return self.slot_trees[slot]
 

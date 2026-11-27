@@ -43,6 +43,12 @@ Tiles and labels require internet access; the solvers use the local road graph.
   verification, and known limits.
 
 The web application supports `alns`, `vns`, `aco`, `dijkstra`, and `ppo`.
+For cross-mode CLI comparison (`[poi, street-reduced, street-full] × [dijkstra, alns, vns, aco, ppo]`), run:
+
+```bash
+python scripts/evaluate_algorithms.py --mode all --start H01 --end H04 --budget-min 90 --departure 08:00 --iterations 24
+```
+
 The legacy OD-matrix algorithms remain available through the separate
 command-line tools, for example:
 

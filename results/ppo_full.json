@@ -1,0 +1,30 @@
+[
+  {
+    "policy": "random",
+    "mean_score": 15.8401,
+    "mean_pois": 3.6,
+    "mean_narrow_m": 282.0123306679678,
+    "success_rate": 0.9666666666666667
+  },
+  {
+    "policy": "shortest",
+    "mean_score": 14.5246,
+    "mean_pois": 3.3,
+    "mean_narrow_m": 0.0,
+    "success_rate": 1.0
+  },
+  {
+    "policy": "greedy",
+    "mean_score": 67.93753333333333,
+    "mean_pois": 15.5,
+    "mean_narrow_m": 0.0,
+    "success_rate": 1.0
+  },
+  {
+    "policy": "ppo",
+    "mean_score": 67.51416666666667,
+    "mean_pois": 15.4,
+    "mean_narrow_m": 7.653087835756693,
+    "success_rate": 1.0
+  }
+]
